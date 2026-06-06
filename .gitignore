@@ -1,0 +1,50 @@
+# Temporary files
+tmp*
+tmp/
+# 忽略 data 目录下的所有文件及子目录
+data/*
+# 例外规则：保留 data/.gitkeep 文件（即不忽略它）
+# 原理：Git 默认不会提交空目录。通过创建一个空的 .gitkeep 文件作为“占位符”，
+#       可以确保 Git 在克隆或检出时自动保留 data 目录结构，而忽略其中的实际数据文件。
+!data/.gitkeep
+
+# Build directories
+build/
+cmake-build-*/
+out/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Compiled binaries
+*.o
+*.obj
+*.so
+*.a
+*.dylib
+*.exe
+*.out
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Debug files
+*.dSYM/
+*.pdb
+*.ilk
+
+# Data output (optional, uncomment if needed)
+# data/*.bin
+# data/*.dat
