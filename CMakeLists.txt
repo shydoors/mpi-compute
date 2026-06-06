@@ -16,3 +16,4 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
 
 # Debug模式通常会包含调试信息，但是不会进行优化，以便于开发人员调试代码。-O0, -g -Wall -Wextra -Werror
 # Release模式则会进行优化，但不会包含调试信息，以提高程序的性能。 -O2
+# 其余一致
