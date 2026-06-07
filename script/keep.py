@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """
-K-Means 聚类结果渲染脚本
+K-Means 聚类结果渲染脚本 —— 同时输出 SVG + PNG，支持大量簇的高区分度着色
 
 用法:
-  uv run script/render.py
+  uv run script/render.py [时间戳] [--show]
+
+示例:
+  uv run script/render.py 20260607_135044          # 保存 SVG 和 PNG
+  uv run script/render.py 20260607_135044 --show   # 保存并弹出窗口展示
+  uv run script/render.py                          # 交互选择运行结果，保存 SVG 和 PNG
 
 依赖 (uv 自动管理): numpy, matplotlib
 """
@@ -12,21 +17,44 @@ import os
 import struct
 import csv
 import sys
+import colorsys
+import random
 from pathlib import Path
+from typing import List, Tuple
+
+import numpy as np
+from matplotlib.colors import ListedColormap
 
 
 # ════════════════════════════════════════════════════════════
-# 用户参数
+# 颜色生成工具 —— 用于大量簇的高区分度着色
 # ════════════════════════════════════════════════════════════
-TIMESTAMP = "20260607_135044"  # 留空则交互式选择；填时间戳直接渲染
-OUTPUT    = f"results/{TIMESTAMP}/clusters_{TIMESTAMP}.png" if TIMESTAMP else None
+def generate_distinct_colors(n: int, seed: int = 42) -> Tuple[List[Tuple[float, float, float]], ListedColormap]:
+    """
+    生成 n 种视觉区分度高的颜色 (RGB 三元组列表 以及 matplotlib ListedColormap)
+
+    策略:
+        - 在 HSV 色相环上等间距取 n 个色相
+        - 饱和度在 0.7~1.0 之间轻微随机波动
+        - 明度在 0.8~1.0 之间轻微随机波动
+        - 固定随机种子保证每次生成的颜色一致
+    """
+    rng = random.Random(seed)
+    colors = []
+    for i in range(n):
+        hue = i / n                          # 色相均匀分布
+        saturation = 0.7 + rng.random() * 0.3  # 高饱和
+        value      = 0.8 + rng.random() * 0.2  # 较高明度
+        rgb = colorsys.hsv_to_rgb(hue, saturation, value)
+        colors.append(rgb)
+    cmap = ListedColormap(colors, name=f"custom_{n}")
+    return colors, cmap
 
 
 # ════════════════════════════════════════════════════════════
-# 读取 labels.bin
+# 数据读取函数
 # ════════════════════════════════════════════════════════════
 def read_labels(bin_path: str):
-    import numpy as np
     with open(bin_path, "rb") as f:
         n = struct.unpack("Q", f.read(8))[0]
         labels = np.frombuffer(f.read(), dtype=np.uint32)
@@ -36,11 +64,7 @@ def read_labels(bin_path: str):
     return labels
 
 
-# ════════════════════════════════════════════════════════════
-# 读取 render.csv
-# ════════════════════════════════════════════════════════════
 def read_render(csv_path: str):
-    import numpy as np
     xs, ys, labs = [], [], []
     with open(csv_path, "r") as f:
         reader = csv.reader(f)
@@ -52,11 +76,7 @@ def read_render(csv_path: str):
     return np.array(xs), np.array(ys), np.array(labs)
 
 
-# ════════════════════════════════════════════════════════════
-# 读取 centers.csv
-# ════════════════════════════════════════════════════════════
 def read_centers(csv_path: str):
-    import numpy as np
     cxs, cys, ids = [], [], []
     with open(csv_path, "r") as f:
         reader = csv.reader(f)
@@ -69,7 +89,7 @@ def read_centers(csv_path: str):
 
 
 # ════════════════════════════════════════════════════════════
-# 交互式选择
+# 交互式选择运行结果文件夹
 # ════════════════════════════════════════════════════════════
 def pick_folder(results_dir: str) -> str:
     results_path = Path(results_dir)
@@ -102,13 +122,13 @@ def pick_folder(results_dir: str) -> str:
 
 
 # ════════════════════════════════════════════════════════════
-# 主渲染
+# 主渲染函数
 # ════════════════════════════════════════════════════════════
-def render(run_dir: str, output_path: str = None):
+def render(run_dir: str, show: bool = False):
     import matplotlib
-    matplotlib.use("Agg")
+    if not show:
+        matplotlib.use("Agg")   # 无头保存模式
     import matplotlib.pyplot as plt
-    import numpy as np
 
     run_path = Path(run_dir)
     timestamp = run_path.name
@@ -128,6 +148,7 @@ def render(run_dir: str, output_path: str = None):
     print(f"\n  Timestamp:     {timestamp}")
     print(f"  Dir:           {run_dir}")
 
+    # 读取计算后端信息
     backend = "?"
     if result_path.exists():
         with open(result_path) as f:
@@ -136,6 +157,7 @@ def render(run_dir: str, output_path: str = None):
                     backend = line.split(":")[-1].strip()
                     break
 
+    # 读取聚类数据
     labels = read_labels(str(labels_path))
     xs, ys, render_labels = read_render(str(render_path))
     cxs, cys, center_ids = read_centers(str(centers_path))
@@ -146,30 +168,45 @@ def render(run_dir: str, output_path: str = None):
     print(f"  Render points: {len(xs):,}")
     print(f"  Total labels:  {len(labels):,}")
 
+    # 根据实际簇数生成专用高区分度色板
+    colors, cmap_custom = generate_distinct_colors(k)
+
+    # 创建图形
     fig, ax = plt.subplots(figsize=(16, 12), dpi=150)
 
+    # 绘制采样点
     ax.scatter(
-        xs, ys, c=render_labels, s=1, cmap="tab10",
+        xs, ys, c=render_labels, s=1, cmap=cmap_custom,
         alpha=0.6, rasterized=True
     )
 
+    # 绘制聚类中心
     ax.scatter(
-        cxs, cys, c=range(k), cmap="tab10",
+        cxs, cys, c=range(k), cmap=cmap_custom,
         s=200, marker="X", edgecolors="white", linewidths=2,
         zorder=5
     )
 
+    # ---- 图例处理：簇太多时只显示前 20 个，避免画面混乱 ----
     handles = []
     for i in range(k):
         handles.append(
             plt.Line2D(
                 [0], [0], marker="o", color="w",
-                markerfacecolor=plt.cm.tab10(i / 10),
+                markerfacecolor=colors[i],
                 markersize=8, label=f"Cluster {i}"
             )
         )
-    ax.legend(handles=handles, title="Clusters", loc="best", fontsize=10)
+    if k > 50:
+        ax.legend(
+            handles=handles[:20],
+            title=f"Clusters (showing 20 of {k})",
+            loc="best", fontsize=8
+        )
+    else:
+        ax.legend(handles=handles, title="Clusters", loc="best", fontsize=10)
 
+    # 标题与坐标轴
     ax.set_title(
         f"K-Means Clustering  (K={k}, {backend}, Points={len(labels):,})",
         fontsize=14
@@ -181,14 +218,26 @@ def render(run_dir: str, output_path: str = None):
 
     plt.tight_layout()
 
-    if output_path is None:
-        output_path = f"clusters_{timestamp}.png"
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
-    plt.close(fig)
+    # ---- 同时保存 PNG 和 SVG ----
+    out_dir = run_path
+    base_name = f"clusters_{timestamp}"
 
-    print(f"  Saved:         {output_path}")
-    print(f"  DPI:           150 dpi, {fig.get_size_inches()[0]:.0f}x{fig.get_size_inches()[1]:.0f} in")
+    # 保存 PNG（栅格，有 DPI 概念）
+    png_path = out_dir / f"{base_name}.png"
+    fig.savefig(png_path, dpi=150)
+    print(f"  Saved (PNG):   {png_path}")
+
+    # 保存 SVG（矢量，不受 DPI 影响）
+    svg_path = out_dir / f"{base_name}.svg"
+    fig.savefig(svg_path)
+    print(f"  Saved (SVG):   {svg_path}")
+
+    # 是否弹出展示窗口
+    if show:
+        print("  正在显示聚类结果，关闭窗口后退出...")
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 # ════════════════════════════════════════════════════════════
@@ -199,14 +248,22 @@ if __name__ == "__main__":
     project_dir = script_dir.parent
     results_dir = str(project_dir / "results")
 
-    if TIMESTAMP:
-        run_dir = os.path.join(results_dir, TIMESTAMP)
+    # 简单命令行解析：支持位置参数时间戳 和 --show 标志
+    timestamp_arg = ""
+    show_flag = False
+    for arg in sys.argv[1:]:
+        if arg == "--show":
+            show_flag = True
+        elif not arg.startswith("--"):
+            timestamp_arg = arg
+
+    # 确定运行结果文件夹
+    if timestamp_arg:
+        run_dir = os.path.join(results_dir, timestamp_arg)
         if not os.path.isdir(run_dir):
             print(f"Error: 找不到运行结果: {run_dir}")
             sys.exit(1)
     else:
         run_dir = pick_folder(results_dir)
-        # 交互式选择时，OUTPUT 已取 None，图片存当前目录
-        OUTPUT = None
 
-    render(run_dir, OUTPUT)
+    render(run_dir, show=show_flag)
