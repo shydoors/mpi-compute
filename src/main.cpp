@@ -2,10 +2,17 @@
  * @file main.cpp
  * @brief K-Means 聚类 — 主入口（读 config.json，VS2019 直接运行版）
  *
- * 使用方法（VS2019）:
+ * 使用方法:
  *   1. 修改 src/config.json 中的运行参数
- *   2. 按 F5（调试运行）或 Ctrl+F5（直接运行）
- *    无需重新编译，改完 config.json 直接点运行即可。
+ *   2. 编译运行：./build/kmeans（或 VS2019 按 F5）
+ *    改 config.json 无需重新编译。
+ *
+ * config.json 中的路径字段说明:
+ *   ProjectsDir — 项目根目录。所有相对路径基于此拼接。
+ *     如果为空字符串，则自动检测（向上查找含 data/ 和 src/ 的目录）。
+ *     建议在 VS2019 中手动设为项目根目录的绝对路径。
+ *
+ *   data_path 等路径字段 — 相对 ProjectsDir 的相对路径，或绝对路径。
  *
  * 输出文件（自动保存到 results/ 目录）:
  *   result_YYYYMMDD_HHMMSS.txt     — 运行日志
@@ -19,6 +26,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -28,9 +36,10 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <unistd.h>
 
 // ============================================================
-// 极简 JSON 解析 — 只读 "key": value 模式的键值对
+// 极简 JSON 解析
 // ============================================================
 namespace {
 
@@ -41,7 +50,6 @@ static std::string load_file(const std::string& path) {
                       std::istreambuf_iterator<char>());
 }
 
-// 去掉字符串首尾空白
 static std::string trim(const std::string& s) {
   size_t a = 0, b = s.size();
   while (a < b && (s[a] == ' ' || s[a] == '\t' || s[a] == '\n' || s[a] == '\r')) ++a;
@@ -49,7 +57,6 @@ static std::string trim(const std::string& s) {
   return s.substr(a, b - a);
 }
 
-// 去掉字符串首尾的引号
 static std::string unquote(const std::string& s) {
   auto t = trim(s);
   if (t.size() >= 2 && t.front() == '"' && t.back() == '"')
@@ -57,26 +64,20 @@ static std::string unquote(const std::string& s) {
   return t;
 }
 
-// 在 content 中找到 key 对应的 value（原始字符串，含引号）
 static std::string find_value_raw(const std::string& content, const std::string& key) {
-  // 查找 "key":
   std::string pattern = '"' + key + '"';
   size_t pos = content.find(pattern);
   if (pos == std::string::npos) return "";
 
-  // 找冒号
   pos = content.find(':', pos + pattern.size());
   if (pos == std::string::npos) return "";
 
-  // 跳过空白
   ++pos;
   while (pos < content.size() && (content[pos] == ' ' || content[pos] == '\t' ||
          content[pos] == '\n' || content[pos] == '\r')) ++pos;
   if (pos >= content.size()) return "";
 
-  // 判断 value 类型
   if (content[pos] == '"') {
-    // 字符串：找匹配的结束引号
     size_t end = pos + 1;
     while (end < content.size()) {
       if (content[end] == '"' && (end == pos + 1 || content[end-1] != '\\')) break;
@@ -85,7 +86,6 @@ static std::string find_value_raw(const std::string& content, const std::string&
     if (end < content.size()) ++end;
     return content.substr(pos, end - pos);
   } else if (content[pos] == '{' || content[pos] == '[') {
-    // 对象或数组：找匹配的括号
     char open = content[pos];
     char close = (open == '{') ? '}' : ']';
     int depth = 1;
@@ -97,7 +97,6 @@ static std::string find_value_raw(const std::string& content, const std::string&
     }
     return content.substr(pos, end - pos);
   } else {
-    // 数值 / true / false / null：到逗号或括号或空白结束
     size_t end = pos;
     while (end < content.size() && content[end] != ',' && content[end] != '}' &&
            content[end] != ']' && content[end] != ' ' && content[end] != '\t' &&
@@ -106,12 +105,10 @@ static std::string find_value_raw(const std::string& content, const std::string&
   }
 }
 
-// 读字符串值（返回去掉引号的内容）
 static std::string read_string(const std::string& content, const std::string& key) {
   return unquote(find_value_raw(content, key));
 }
 
-// 从嵌套对象中读字符串值
 static std::string read_nested_string(const std::string& content,
                                       const std::string& obj_key,
                                       const std::string& field_key) {
@@ -120,21 +117,18 @@ static std::string read_nested_string(const std::string& content,
   return unquote(find_value_raw(obj, field_key));
 }
 
-// 读整数
 static int read_int(const std::string& content, const std::string& key) {
   auto s = trim(find_value_raw(content, key));
   if (s.empty()) return 0;
   return std::stoi(s);
 }
 
-// 读浮点数
 static double read_double(const std::string& content, const std::string& key) {
   auto s = trim(find_value_raw(content, key));
   if (s.empty()) return 0.0;
   return std::stod(s);
 }
 
-// 读布尔值
 static bool read_bool(const std::string& content, const std::string& key) {
   auto s = trim(find_value_raw(content, key));
   if (s == "true") return true;
@@ -145,26 +139,86 @@ static bool read_bool(const std::string& content, const std::string& key) {
 } // anonymous namespace
 
 // ============================================================
-// 输出目录
+// 路径工具
 // ============================================================
-static const char* kOutputDir = "results";
+namespace {
 
-static void ensure_output_dir() {
+/// 判断路径是否为绝对路径
+static bool is_absolute_path(const std::string& path) {
+  if (path.empty()) return false;
+  if (path[0] == '/') return true;  // Unix
 #ifdef _WIN32
-  std::system(("if not exist " + std::string(kOutputDir) + " mkdir " + std::string(kOutputDir)).c_str());
+  if (path.size() >= 2 && std::isalpha(path[0]) && path[1] == ':') return true;
+#endif
+  return false;
+}
+
+/// 拼接两个路径（处理中间的 /）
+static std::string join_path(const std::string& base, const std::string& rel) {
+  if (rel.empty()) return base;
+  if (is_absolute_path(rel)) return rel;
+  if (base.empty()) return rel;
+
+  std::string result = base;
+  if (result.back() != '/') result += '/';
+  result += rel;
+  return result;
+}
+
+/// 如果 path 是相对路径，则基于 base 拼接为绝对路径
+static std::string resolve_path(const std::string& path, const std::string& base) {
+  if (path.empty()) return path;
+  if (is_absolute_path(path)) return path;
+  return join_path(base, path);
+}
+
+/// 自动检测项目根目录：从当前工作目录向上查找，直到发现 data/ 和 src/ 同时存在
+static std::string detect_project_dir() {
+  char buf[PATH_MAX];
+  if (!::getcwd(buf, sizeof(buf))) return "";
+
+  std::string cwd(buf);
+  // 尝试当前目录
+  auto check = [](const std::string& dir) -> bool {
+    auto data_ok = access((dir + "/data").c_str(), F_OK) == 0;
+    auto src_ok  = access((dir + "/src").c_str(),  F_OK) == 0;
+    return data_ok && src_ok;
+  };
+
+  // 从 CWD 开始向上逐级检查
+  std::string dir = cwd;
+  while (true) {
+    if (check(dir)) return dir;
+    // 到根目录了还没找到，就返回空
+    if (dir == "/" || dir.empty()) return "";
+    // 取父目录
+    auto pos = dir.rfind('/');
+    if (pos == std::string::npos) return "";
+    if (pos == 0) { dir = "/"; }
+    else { dir = dir.substr(0, pos); }
+  }
+}
+
+/// 确保目录存在
+static void ensure_dir(const std::string& dir) {
+#ifdef _WIN32
+  std::system(("if not exist \"" + dir + "\" mkdir \"" + dir + "\"").c_str());
 #else
-  std::system(("mkdir -p " + std::string(kOutputDir)).c_str());
+  std::system(("mkdir -p \"" + dir + "\"").c_str());
 #endif
 }
+
+} // anonymous namespace
 
 // ============================================================
 // 保存日志到文件
 // ============================================================
-static void save_log(const KMeansConfig& config,
+static void save_log(const std::string& output_dir,
+                     const KMeansConfig& config,
                      const KMeansResult& result,
                      const char* timestamp) {
-  char path[256];
-  std::snprintf(path, sizeof(path), "%s/result_%s.txt", kOutputDir, timestamp);
+  char path[512];
+  std::snprintf(path, sizeof(path), "%s/result_%s.txt", output_dir.c_str(), timestamp);
 
   std::FILE* fp = std::fopen(path, "w");
   if (!fp) { std::fprintf(stderr, "Error: 无法写入 %s\n", path); return; }
@@ -172,6 +226,7 @@ static void save_log(const KMeansConfig& config,
   std::fprintf(fp, "========================================\n");
   std::fprintf(fp, "  K-Means 聚类运行结果\n");
   std::fprintf(fp, "  运行时间: %s\n", timestamp);
+  std::fprintf(fp, "  项目根目录: %s\n", config.projects_dir.c_str());
   std::fprintf(fp, "========================================\n\n");
   std::fprintf(fp, "--- 配置参数 ---\n");
   std::fprintf(fp, "  数据文件:        %s\n", config.data_path.c_str());
@@ -203,13 +258,14 @@ static void save_log(const KMeansConfig& config,
 // ============================================================
 // 保存所有点的聚类标签（二进制，u32 数组）
 // ============================================================
-static void save_labels_bin(const KMeansResult& result,
+static void save_labels_bin(const std::string& output_dir,
+                            const KMeansResult& result,
                             u64 num_points,
                             const char* timestamp) {
   if (!result.labels || num_points == 0) return;
 
-  char path[256];
-  std::snprintf(path, sizeof(path), "%s/labels_%s.bin", kOutputDir, timestamp);
+  char path[512];
+  std::snprintf(path, sizeof(path), "%s/labels_%s.bin", output_dir.c_str(), timestamp);
 
   std::FILE* fp = std::fopen(path, "wb");
   if (!fp) { std::fprintf(stderr, "Error: 无法写入 %s\n", path); return; }
@@ -227,12 +283,13 @@ static void save_labels_bin(const KMeansResult& result,
 // ============================================================
 // 导出中心点（CSV）
 // ============================================================
-static void save_centers_csv(const KMeansResult& result,
+static void save_centers_csv(const std::string& output_dir,
+                             const KMeansResult& result,
                              const char* timestamp) {
   if (!result.centers_x || !result.centers_y || result.k == 0) return;
 
-  char path[256];
-  std::snprintf(path, sizeof(path), "%s/centers_%s.csv", kOutputDir, timestamp);
+  char path[512];
+  std::snprintf(path, sizeof(path), "%s/centers_%s.csv", output_dir.c_str(), timestamp);
 
   std::FILE* fp = std::fopen(path, "w");
   if (!fp) { std::fprintf(stderr, "Error: 无法写入 %s\n", path); return; }
@@ -249,7 +306,8 @@ static void save_centers_csv(const KMeansResult& result,
 // ============================================================
 // 导出渲染用采样点（CSV）
 // ============================================================
-static void save_render_csv(const KMeansConfig& config,
+static void save_render_csv(const std::string& output_dir,
+                            const KMeansConfig& config,
                             const KMeansResult& result,
                             u64 num_points,
                             u64 max_render_points,
@@ -267,8 +325,8 @@ static void save_render_csv(const KMeansConfig& config,
     return;
   }
 
-  char path[256];
-  std::snprintf(path, sizeof(path), "%s/render_%s.csv", kOutputDir, timestamp);
+  char path[512];
+  std::snprintf(path, sizeof(path), "%s/render_%s.csv", output_dir.c_str(), timestamp);
 
   std::FILE* fp = std::fopen(path, "w");
   if (!fp) { std::fprintf(stderr, "Error: 无法写入 %s\n", path); return; }
@@ -317,29 +375,41 @@ static void print_result(const KMeansResult& result) {
 // ============================================================
 static void kmeans_run() {
   // ---- 1. 读取配置文件 ----
-  std::string json = load_file("src/config.json");
+  std::string config_path = "src/config.json";
+  std::string json = load_file(config_path);
   if (json.empty()) {
     std::fprintf(stderr, "Error: 无法读取 src/config.json\n"
-                         "请确保该文件存在。\n");
+                         "请确保在项目根目录下运行。\n");
     std::getchar();
     return;
   }
 
-  // ---- 2. 构建配置 ----
-  KMeansConfig config;
-
-  config.data_path = read_string(json, "data_path");
-  if (config.data_path.empty()) config.data_path = "data/a.dat";
-  if (config.data_path.find('/') == std::string::npos &&
-      config.data_path.find('\\') == std::string::npos) {
-    // 如果是单纯文件名，自动补项目根
+  // ---- 2. 确定项目根目录 ----
+  std::string projects_dir = read_string(json, "ProjectsDir");
+  if (projects_dir.empty()) {
+    // 自动检测
+    projects_dir = detect_project_dir();
+    if (projects_dir.empty()) {
+      std::fprintf(stderr, "Error: 无法自动检测项目根目录。\n"
+                           "请在 src/config.json 中设置 ProjectsDir。\n");
+      std::getchar();
+      return;
+    }
   }
+  std::printf("  项目根目录:  %s\n", projects_dir.c_str());
 
-  // 读 backend：优先从嵌套对象中读 "value"
+  // ---- 3. 构建配置（先解析相对路径，再拼接为绝对路径） ----
+  KMeansConfig config;
+  config.projects_dir = projects_dir;
+
+  // 从 config.json 读原始路径（可能是相对路径）
+  std::string raw_data_path = read_string(json, "data_path");
+  if (raw_data_path.empty()) raw_data_path = "data/a.dat";
+  config.data_path = resolve_path(raw_data_path, projects_dir);
+
+  // 后端
   std::string backend_str = read_nested_string(json, "backend", "value");
-  // 如果没有嵌套对象，直接读顶层
   if (backend_str.empty()) backend_str = read_string(json, "backend");
-
   if (backend_str == "seq")       config.backend = Backend::Sequential;
   else if (backend_str == "omp")  config.backend = Backend::OpenMP;
   else if (backend_str == "cuda") config.backend = Backend::CUDA;
@@ -354,16 +424,14 @@ static void kmeans_run() {
   config.max_iterations = read_int(json, "max_iterations");
   config.threshold      = read_double(json, "threshold");
   config.streaming      = read_bool(json, "streaming");
-  config.checkpoint_path = read_string(json, "checkpoint_path");
+
+  // checkpoint 路径也拼接
+  config.checkpoint_path = resolve_path(read_string(json, "checkpoint_path"), projects_dir);
   config.resume         = read_bool(json, "resume");
   config.output_path    = "";
 
   // 渲染采样上限
-  u64 render_max_points = static_cast<u64>(
-      read_nested_string(json, "output", "render_max_points").empty()
-        ? 100000
-        : read_int(json, "render_max_points"));
-  // 从嵌套对象读出
+  u64 render_max_points = 100000;
   {
     auto obj = find_value_raw(json, "output");
     if (!obj.empty()) {
@@ -372,13 +440,16 @@ static void kmeans_run() {
     }
   }
 
-  // ---- 3. 打印配置 ----
+  // 输出目录
+  std::string output_dir = projects_dir + "/results";
+
+  // ---- 4. 打印配置 ----
   std::printf("========================================\n");
   std::printf("  K-Means Clustering\n");
-  std::printf("  配置文件:      src/config.json\n");
   std::printf("========================================\n\n");
 
   std::printf("  数据文件:    %s\n", config.data_path.c_str());
+  std::printf("  输出目录:    %s\n", output_dir.c_str());
   std::printf("  后端:        %s\n", backend_name(config.backend));
   std::printf("  自动 K:      %s\n", config.auto_k ? "是" : "否");
   if (!config.auto_k) {
@@ -393,11 +464,11 @@ static void kmeans_run() {
   std::printf("  渲染采样:    %lu 点\n", render_max_points);
   std::printf("\n");
 
-  // ---- 4. 运行 K-Means ----
+  // ---- 5. 运行 K-Means ----
   KMeans kmeans(config);
   auto result = kmeans.run();
 
-  // ---- 5. 输出结果 ----
+  // ---- 6. 输出结果 ----
   print_result(result);
 
   u64 num_points = 0;
@@ -414,11 +485,12 @@ static void kmeans_run() {
   std::strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S",
                 std::localtime(&tt));
 
-  ensure_output_dir();
-  save_log(config, result, timestamp);
-  save_labels_bin(result, num_points, timestamp);
-  save_centers_csv(result, timestamp);
-  save_render_csv(config, result, num_points, render_max_points, timestamp);
+  ensure_dir(output_dir);
+  save_log(output_dir, config, result, timestamp);
+  save_labels_bin(output_dir, result, num_points, timestamp);
+  save_centers_csv(output_dir, result, timestamp);
+  save_render_csv(output_dir, config, result, num_points,
+                  render_max_points, timestamp);
 
   std::printf("\n运行完毕！按 Enter 键退出...\n");
   std::getchar();

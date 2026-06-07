@@ -70,6 +70,9 @@ struct KMeansConfig {
   bool        resume{false};            // 是否从 checkpoint 恢复
 
   // 输出
+  std::string projects_dir;
+
+  // 输出
   std::string output_path;              // 聚类结果输出路径（空=不输出）
 };
 
