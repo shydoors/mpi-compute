@@ -1,9 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
 
+# ============================================================
+# 启用 CUDA 语言支持
+# ============================================================
 project(mpi-compute
   VERSION 1.0.0
-  DESCRIPTION "教学项目 — K-Means 聚类算法（支持 MPI + OpenMP）"
-  LANGUAGES CXX
+  DESCRIPTION "教学项目 — K-Means 聚类算法（CUDA + OpenMP + MPI）"
+  LANGUAGES CXX CUDA
 )
 
 # ============================================================
@@ -13,6 +16,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# CUDA 标准（与 C++17 对齐）
+set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 # ============================================================
 # 项目根目录变量（供子目录使用）
 # ============================================================
@@ -38,6 +44,11 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
 # Release 模式
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")
 
+# CUDA 通用标志
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wall -Wno-pedantic")
+set(CMAKE_CUDA_FLAGS_DEBUG "-g -G -O0")
+set(CMAKE_CUDA_FLAGS_RELEASE "-O3 -DNDEBUG --use_fast_math")
+
 # ============================================================
 # OpenMP 支持
 # ============================================================
@@ -50,14 +61,11 @@ else()
 endif()
 
 # ============================================================
-# MPI 支持（可选，仅在需要时启用）
-# 如需强制 MPI，将 REQUIRED 改为必需
+# MPI 支持（可选）
 # ============================================================
 find_package(MPI QUIET)
 if(MPI_CXX_FOUND)
   add_definitions(-DUSE_MPI)
-  set(MPI_LIBRARIES ${MPI_CXX_LIBRARIES})
-  set(MPI_INCLUDE_DIRS ${MPI_CXX_INCLUDE_DIRS})
   message(STATUS "MPI found: ${MPI_CXX_LIBRARIES}")
 else()
   message(STATUS "MPI not found — building without MPI support")
@@ -88,4 +96,6 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build")
 # ============================================================
 # 子目录
 # ============================================================
+add_subdirectory(src)
 add_subdirectory(script)
+
