@@ -44,7 +44,7 @@ struct Center {
 // ============================================================
 // 全局常量
 // ============================================================
-constexpr u64   kDefaultSampleSize    = 1'000'000;
+constexpr u64   kDefaultSampleSize    = 50'000;
 constexpr u32   kMaxClusters          = 4'000;
 constexpr u32   kMinClusters          = 2;
 constexpr i32   kMaxIterations        = 300;

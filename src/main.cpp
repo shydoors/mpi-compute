@@ -1,3 +1,4 @@
+#include <cstdio>
 /**
  * @file main.cpp
  * @brief K-Means 聚类 — 主入口（读 config.json，VS2019 直接运行版）
@@ -247,7 +248,7 @@ static void save_result_txt(const std::string& dir,
   std::fprintf(fp, "  迭代次数:          %d\n", result.iterations);
   std::fprintf(fp, "  SSE (Inertia):     %.6e\n", result.inertia);
   std::fprintf(fp, "  加载时间:          %.3f s\n", result.time_load);
-  std::fprintf(fp, "  自动 K 推导时间:   %.3f s\n", result.time_auto_k);
+  std::fprintf(fp, "  自动 K 推导时间:   %.3f s\n", result.time_autok);
   std::fprintf(fp, "  迭代时间:          %.3f s\n", result.time_iterate);
   std::fprintf(fp, "  总运行时间:        %.3f s\n", result.time_total);
   std::fprintf(fp, "========================================\n");
@@ -309,18 +310,22 @@ static void save_render_csv(const std::string& dir,
   std::FILE* fp = std::fopen(path, "w");
   if (!fp) { std::fprintf(stderr, "Error: 无法写入 %s\n", path); return; }
   std::fprintf(fp, "x,y,label\n");
-  const f64* xs = data.x();
-  const f64* ys = data.y();
+  bool interleaved = (data.mode() == Dataset::Mode::Interleaved);
+  const f64* raw = data.raw_data();
   if (num_points <= max_render_points) {
     for (u64 i = 0; i < num_points; ++i) {
-      std::fprintf(fp, "%.6f,%.6f,%u\n", xs[i], ys[i], result.labels[i]);
+      f64 px = interleaved ? raw[i * 2] : data.x()[i];
+      f64 py = interleaved ? raw[i * 2 + 1] : data.y()[i];
+      std::fprintf(fp, "%.6f,%.6f,%u\n", px, py, result.labels[i]);
     }
     std::printf("  渲染数据已保存至: %s  (%lu 个点, 全量)\n", path, num_points);
   } else {
     u64 step = num_points / max_render_points;
     u64 actual = 0;
     for (u64 i = 0; i < num_points; i += step) {
-      std::fprintf(fp, "%.6f,%.6f,%u\n", xs[i], ys[i], result.labels[i]);
+      f64 px = interleaved ? raw[i * 2] : data.x()[i];
+      f64 py = interleaved ? raw[i * 2 + 1] : data.y()[i];
+      std::fprintf(fp, "%.6f,%.6f,%u\n", px, py, result.labels[i]);
       ++actual;
     }
     std::printf("  渲染数据已保存至: %s  (%lu 个点, 采样步长 %lu, 约 %lu 个点)\n",
@@ -338,7 +343,7 @@ static void print_result(const KMeansResult& result) {
   std::printf("  迭代次数:          %d\n", result.iterations);
   std::printf("  SSE (Inertia):     %.6e\n", result.inertia);
   std::printf("  加载时间:          %.3f s\n", result.time_load);
-  std::printf("  自动 K 推导时间:   %.3f s\n", result.time_auto_k);
+  std::printf("  自动 K 推导时间:   %.3f s\n", result.time_autok);
   std::printf("  迭代时间:          %.3f s\n", result.time_iterate);
   std::printf("  总运行时间:        %.3f s\n", result.time_total);
   std::printf("==================================\n");
@@ -485,6 +490,7 @@ static void kmeans_run() {
 // 主函数
 // ============================================================
 int main() {
+  std::setbuf(stdout, nullptr);
   kmeans_run();
   return 0;
 }

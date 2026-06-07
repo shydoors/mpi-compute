@@ -2,11 +2,9 @@
  * @file dataset.cpp
  * @brief 数据集管理实现
  *
- * 支持：
- *   - mmap 全量加载（大文件推荐）
- *   - 流式分块读取（内存受限场景）
- *   - 均匀采样
- *   - SoA 分离存储
+ * 加载策略：
+ *   小文件（< 1 GiB）→ mmap + SoA 转换（兼容所有后端）
+ *   大文件（>= 1 GiB）→ mmap 零拷贝，保留交错数据（不 SoA，省内存）
  */
 
 #include "dataset.hpp"
@@ -21,19 +19,18 @@
 #include <random>
 #include <vector>
 
-// POSIX 头
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 // ============================================================
-// 内部工具
+// 大文件阈值（1 GiB）
 // ============================================================
 namespace {
+constexpr u64 kLargeFileThreshold = 1ULL * 1024 * 1024 * 1024;  // 1 GiB
 
-/// 获取文件大小（字节）
-[[nodiscard]] u64 file_size(int fd) {
+u64 file_size(int fd) {
   struct stat st;
   if (::fstat(fd, &st) != 0) {
     std::fprintf(stderr, "Error: fstat failed: %s\n", std::strerror(errno));
@@ -42,8 +39,7 @@ namespace {
   return static_cast<u64>(st.st_size);
 }
 
-/// 从文件描述符读取固定字节数
-[[nodiscard]] bool read_exact(int fd, void* buf, u64 count) {
+bool read_exact(int fd, void* buf, u64 count) {
   auto* ptr = static_cast<char*>(buf);
   while (count > 0) {
     auto nread = ::read(fd, ptr, count);
@@ -73,19 +69,19 @@ Dataset::~Dataset() {
 }
 
 void Dataset::release() {
-  if (is_mmap_ && mmap_addr_ != nullptr && mmap_addr_ != MAP_FAILED) {
+  if (mmap_addr_ != nullptr && mmap_addr_ != MAP_FAILED) {
     ::munmap(mmap_addr_, mmap_length_);
-    mmap_addr_ = nullptr;
-    mmap_length_ = 0;
   }
+  mmap_addr_ = nullptr;
+  mmap_length_ = 0;
   x_.reset();
   y_.reset();
   num_points_ = 0;
-  is_mmap_ = false;
+  mode_ = Mode::None;
 }
 
 // ----------------------------------------------------------
-// 全量加载（mmap 优先）
+// 全量加载
 // ----------------------------------------------------------
 bool Dataset::load(const std::string& path, bool use_mmap) {
   release();
@@ -105,56 +101,74 @@ bool Dataset::load(const std::string& path, bool use_mmap) {
     return false;
   }
 
-  // 检查数据大小是否为 16 字节的整数倍
   if (fsize % kBytesPerPoint != 0) {
     std::fprintf(stderr, "Warning: 文件大小 %lu 不是 %zu 的整数倍, 尾部数据将被忽略\n",
                  fsize, kBytesPerPoint);
   }
 
   u64 npoints = fsize / kBytesPerPoint;
-  std::printf("  加载 %lu 个点 (%s)\n", npoints,
-              use_mmap ? "mmap" : "read");
 
-  // 分配 SoA 存储
-  auto x_tmp = std::make_unique<f64[]>(npoints);
-  auto y_tmp = std::make_unique<f64[]>(npoints);
+  // ---- 根据文件大小决定加载模式 ----
+  bool use_interleaved = use_mmap && (fsize >= kLargeFileThreshold);
 
-  if (use_mmap) {
-    // --- mmap 路径 ---
+  std::printf("  加载 %lu 个点 (%s, %s)\n", npoints,
+              use_mmap ? "mmap" : "read",
+              use_interleaved ? "交错零拷贝" : "SoA 分离");
+
+  if (use_interleaved) {
+    // === 大文件：mmap + 交错零拷贝 ===
     void* addr = ::mmap(nullptr, fsize, PROT_READ, MAP_PRIVATE, fd, 0);
     if (addr == MAP_FAILED) {
       std::fprintf(stderr, "Warning: mmap 失败 (%s), 回退到 read\n",
                    std::strerror(errno));
-      // 回退到 read 路径
+      ::close(fd);
+      return false;
+    }
+    mmap_addr_   = addr;
+    mmap_length_ = fsize;
+    mode_        = Mode::Interleaved;
+    num_points_  = npoints;
+    ::close(fd);
+
+    std::printf("  加载完成: %lu 点, %.2f GiB (交错零拷贝)\n",
+                num_points_, fsize / (1024.0 * 1024.0 * 1024.0));
+    return true;
+  }
+
+  // === 小文件：mmap + SoA 转换 ===
+  auto x_tmp = std::make_unique<f64[]>(npoints);
+  auto y_tmp = std::make_unique<f64[]>(npoints);
+
+  if (use_mmap) {
+    void* addr = ::mmap(nullptr, fsize, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (addr == MAP_FAILED) {
+      std::fprintf(stderr, "Warning: mmap 失败 (%s), 回退到 read\n",
+                   std::strerror(errno));
       ::lseek(fd, 0, SEEK_SET);
       if (!read_points(fd, npoints, 0)) {
         ::close(fd);
         return false;
       }
-      // read_points 填充了 x_/y_
+      mode_ = Mode::SoA;
     } else {
-      // mmap 成功 — 从映射中提取 SoA 到 x_tmp/y_tmp
       const auto* data = static_cast<const f64*>(addr);
       for (u64 i = 0; i < npoints; ++i) {
         x_tmp[i] = data[i * 2];
         y_tmp[i] = data[i * 2 + 1];
       }
-      // 记录 mmap 信息以便后续释放
-      mmap_addr_   = addr;
-      mmap_length_ = fsize;
-      is_mmap_     = true;
-      // 将 SoA 数据转移给 x_/y_
+      // mmap 用完后立即释放（数据已复制到 SoA）
+      ::munmap(addr, fsize);
       x_ = std::move(x_tmp);
       y_ = std::move(y_tmp);
+      mode_ = Mode::SoA;
     }
   } else {
-    // --- read 路径 ---
     ::lseek(fd, 0, SEEK_SET);
     if (!read_points(fd, npoints, 0)) {
       ::close(fd);
       return false;
     }
-    // read_points 填充了 x_/y_
+    mode_ = Mode::SoA;
   }
 
   ::close(fd);
@@ -166,14 +180,12 @@ bool Dataset::load(const std::string& path, bool use_mmap) {
 }
 
 // ----------------------------------------------------------
-// read_points 内部实现
+// read_points
 // ----------------------------------------------------------
 bool Dataset::read_points(int fd, u64 npoints, u64 /*file_offset*/) {
-  // 已经分配了 x_, y_
   auto x_tmp = std::make_unique<f64[]>(npoints);
   auto y_tmp = std::make_unique<f64[]>(npoints);
 
-  // 使用 double[2] 缓冲区读取
   f64 buf[2];
   for (u64 i = 0; i < npoints; ++i) {
     if (!read_exact(fd, buf, sizeof(buf))) {
@@ -193,7 +205,6 @@ bool Dataset::read_points(int fd, u64 npoints, u64 /*file_offset*/) {
 // 流式加载
 // ----------------------------------------------------------
 bool Dataset::load_streaming(const std::string& path, u64 chunk_size) {
-  // 流式模式 — 先统计点数
   int fd = ::open(path.c_str(), O_RDONLY);
   if (fd < 0) {
     std::fprintf(stderr, "Error: 无法打开文件 '%s': %s\n",
@@ -202,10 +213,7 @@ bool Dataset::load_streaming(const std::string& path, u64 chunk_size) {
   }
 
   u64 fsize = file_size(fd);
-  if (fsize == 0) {
-    ::close(fd);
-    return false;
-  }
+  if (fsize == 0) { ::close(fd); return false; }
 
   u64 npoints = fsize / kBytesPerPoint;
   file_path_ = path;
@@ -213,31 +221,9 @@ bool Dataset::load_streaming(const std::string& path, u64 chunk_size) {
   std::printf("  流式读取: %lu 点, 块大小 %lu MiB\n",
               npoints, chunk_size / (1024 * 1024));
 
-  // 分配内存
   auto x_tmp = std::make_unique<f64[]>(npoints);
   auto y_tmp = std::make_unique<f64[]>(npoints);
 
-  u64 points_per_chunk = chunk_size / kBytesPerPoint;
-  if (points_per_chunk == 0) points_per_chunk = 1;
-
-  ::lseek(fd, 0, SEEK_SET);
-
-  u64 processed = 0;
-  while (processed < npoints) {
-    u64 batch = std::min(points_per_chunk, npoints - processed);
-
-    if (!read_exact(fd, x_tmp.get() + processed, batch * kBytesPerPoint)) {
-      // 实际上这里读取的是交错数据，简化处理：逐点读取
-      // 对于流式，我们用逐点方式（更简单）
-      break;
-    }
-    // 修正：read_exact 读取到 x_tmp 后，需要重新读取为双缓冲格式
-    // 简化方案：重新 seek 并逐点读取
-    // 实际生产代码会优化此过程
-    processed += batch;
-  }
-
-  // 更简单的方法：回到逐点读取
   ::lseek(fd, 0, SEEK_SET);
   for (u64 i = 0; i < npoints; ++i) {
     f64 buf[2];
@@ -249,7 +235,6 @@ bool Dataset::load_streaming(const std::string& path, u64 chunk_size) {
     x_tmp[i] = buf[0];
     y_tmp[i] = buf[1];
 
-    // 进度报告
     if ((i + 1) % 10'000'000 == 0) {
       std::printf("  已读取: %lu / %lu 点 (%.1f%%)\n",
                   i + 1, npoints, 100.0 * (i + 1) / npoints);
@@ -261,21 +246,21 @@ bool Dataset::load_streaming(const std::string& path, u64 chunk_size) {
   x_ = std::move(x_tmp);
   y_ = std::move(y_tmp);
   num_points_ = npoints;
+  mode_ = Mode::SoA;
 
   std::printf("  流式读取完成: %lu 点\n", num_points_);
   return true;
 }
 
 // ----------------------------------------------------------
-// 从内存指针恢复
+// from_memory
 // ----------------------------------------------------------
 bool Dataset::from_memory(f64* x_data, f64* y_data, u64 num_points) {
   release();
-  // 转移所有权 — 实际场景中更复杂，此处简化
-  // 这个接口主要用于断点继续，需要配合外部管理
-  x_ = std::unique_ptr<f64[]>(x_data);
-  y_ = std::unique_ptr<f64[]>(y_data);
+  x_.reset(x_data);
+  y_.reset(y_data);
   num_points_ = num_points;
+  mode_ = Mode::SoA;
   return true;
 }
 
@@ -283,29 +268,24 @@ bool Dataset::from_memory(f64* x_data, f64* y_data, u64 num_points) {
 // 均匀采样
 // ----------------------------------------------------------
 std::vector<f64> Dataset::uniform_sample(u64 sample_size) const {
-  if (empty()) {
-    return {};
-  }
+  if (empty()) return {};
 
-  // 如果总点数 <= 采样数，直接全部返回
   if (num_points_ <= sample_size) {
     std::vector<f64> result;
     result.reserve(num_points_ * 2);
     for (u64 i = 0; i < num_points_; ++i) {
-      result.push_back(x_[i]);
-      result.push_back(y_[i]);
+      auto p = point(i);
+      result.push_back(p.x);
+      result.push_back(p.y);
     }
     return result;
   }
 
-  // 均匀采样：固定步长
   u64 step = num_points_ / sample_size;
   if (step < 1) step = 1;
 
-  // 实际采样数
   u64 actual_samples = num_points_ / step;
   if (actual_samples > sample_size) {
-    // 微调 step
     step = num_points_ / sample_size;
     actual_samples = num_points_ / step;
   }
@@ -314,8 +294,9 @@ std::vector<f64> Dataset::uniform_sample(u64 sample_size) const {
   result.reserve(actual_samples * 2);
 
   for (u64 i = 0; i < num_points_; i += step) {
-    result.push_back(x_[i]);
-    result.push_back(y_[i]);
+    auto p = point(i);
+    result.push_back(p.x);
+    result.push_back(p.y);
   }
 
   std::printf("  采样: %zu 点 (步长 %lu, 总 %lu 点)\n",
