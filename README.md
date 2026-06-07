@@ -171,7 +171,7 @@ plt.savefig("clusters.png", dpi=300)
 
 `data/` 目录下的测试数据：
 * `a.dat` — ~27 MB，约 170 万个点
-* `b.dat` — ~970 MB，约 6000 万个点
+* `b.dat` — ~925 MB，约 6000 万个点
 * `c.dat` — ~9.1 GB，约 6 亿个点
 
 ---
