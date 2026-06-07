@@ -4,9 +4,9 @@
 
 int main() {
   // 1. 打开文件
-  std::ifstream ifs("../data/a.dat", std::ios::in | std::ios::binary);
+  std::ifstream ifs("../../data/a.dat", std::ios::in | std::ios::binary);
   if (!ifs) {
-    std::cerr << "Error: Cannot open file ../data/a.dat" << std::endl;
+    std::cerr << "Error: Cannot open file ../../data/a.dat" << std::endl;
     return 1; // 推荐使用 return 代替 exit()，以便正确触发局部对象的析构
   }
 
