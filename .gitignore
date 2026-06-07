@@ -52,3 +52,17 @@ results/*/
 results/*
 !results/.gitkeep
 .cache
+
+
+# python相关
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
