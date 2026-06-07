@@ -65,7 +65,6 @@ static KMeansConfig parse_args(int argc, char** argv) {
 
   for (i32 i = 1; i < argc; ++i) {
     std::string_view arg{argv[i]};
-
     auto next = [&]() -> std::string_view {
       if (i + 1 >= argc) {
         std::fprintf(stderr, "Error: %s requires an argument\n", argv[i]);
