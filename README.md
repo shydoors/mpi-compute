@@ -2,6 +2,8 @@
 
 本项目实现了 **K-Means 聚类算法**，支持 **CUDA / OpenMP / 串行** 多后端并行加速，以及**自动 K 推导**（Kneedle 肘部检测）和**断点继续（Checkpoint）** 功能。
 
+针对 **9+ GiB 超大规模数据集** 做了优化，大文件自动切换为 **mmap 交错零拷贝模式**，无需将数据全量复制到内存。
+
 [项目规范](./docs/requirements.md) | [整体架构](./docs/design.md)
 
 ---
@@ -20,10 +22,11 @@
 
 ```json
 {
-    "data_path": "data/a.dat",
+    "data_path": "data/c.dat",
     "backend": "omp",
     "auto_k": false,
     "fixed_k": 5,
+    "sample_size": 50000,
     "max_iterations": 30,
     "threshold": 1e-4,
     "streaming": false,
@@ -70,6 +73,22 @@ cd ..
 
 ---
 
+## 查看结果图片
+
+```bash
+uv run script/render.py
+```
+
+交互式选择要渲染的运行结果，或修改脚本顶部的 `TIMESTAMP` 直接指定：
+
+```python
+# script/render.py — 入口部分
+TIMESTAMP = "20260607_125250"   # 留空则交互式选择
+OUTPUT    = f"results/{TIMESTAMP}/clusters_{TIMESTAMP}.png" if TIMESTAMP else None
+```
+
+---
+
 ## 配置文件说明
 
 | 字段 | 说明 | 默认值 |
@@ -78,6 +97,7 @@ cd ..
 | `backend` | 计算后端： `seq` / `omp` / `cuda` | `omp` |
 | `auto_k` | 是否自动推导最优 $K$ | `false` |
 | `fixed_k` | 手动指定 $K$（ `auto_k=false` 时生效） | `5` |
+| `sample_size` | 自动 K 推导的采样点数 | `50000` |
 | `max_iterations` | 最大迭代次数 | `30` |
 | `threshold` | 收敛阈值 | `1e-4` |
 | `streaming` | 是否使用流式读取 | `false` |
@@ -89,13 +109,13 @@ cd ..
 
 ## 输出文件说明
 
-每次运行后， `results/` 目录下生成以下文件：
+每次运行后， `results/YYYYMMDD_HHMMSS/` 目录下生成以下文件：
 
-### `result_YYYYMMDD_HHMMSS.txt` — 运行日志
+### `result.txt` — 运行日志
 
 配置参数 + 运行结果（K 值、迭代次数、SSE、耗时），纯文本。
 
-### `labels_YYYYMMDD_HHMMSS.bin` — 全部聚类标签（二进制，不丢失数据）
+### `labels.bin` — 全部聚类标签（二进制，不丢失数据）
 
 **最重要的输出文件**，保存了所有点的聚类结果。
 
@@ -110,12 +130,12 @@ cd ..
 
 ```python
 import numpy as np
-with open("labels_20260607_100351.bin", "rb") as f:
+with open("labels.bin", "rb") as f:
     n = np.frombuffer(f.read(8), dtype=np.uint64)[0]
     labels = np.frombuffer(f.read(), dtype=np.uint32)
 ```
 
-### `centers_YYYYMMDD_HHMMSS.csv` — 各簇中心坐标
+### `centers.csv` — 各簇中心坐标
 
 ```
 cx,cy,cluster
@@ -124,7 +144,7 @@ cx,cy,cluster
 ...
 ```
 
-### `render_YYYYMMDD_HHMMSS.csv` — 渲染用采样点
+### `render.csv` — 渲染用采样点
 
 当数据量超过 `render_max_points` （默认 10 万）时自动均匀采样，避免渲染卡死。
 
@@ -132,7 +152,7 @@ cx,cy,cluster
 import pandas as pd
 import matplotlib.pyplot as plt
 
-df = pd.read_csv("render_20260607_100351.csv")
+df = pd.read_csv("render.csv")
 plt.scatter(df["x"], df["y"], c=df["label"], s=1, cmap="tab10")
 plt.savefig("clusters.png", dpi=300)
 ```
@@ -151,7 +171,8 @@ plt.savefig("clusters.png", dpi=300)
 
 `data/` 目录下的测试数据：
 * `a.dat` — ~27 MB，约 170 万个点
-* `b.dat` — ~970 MB，约 6000 万个点
+* `b.dat` — ~925 MB，约 6000 万个点
+* `c.dat` — ~9.1 GB，约 6 亿个点
 
 ---
 
@@ -161,33 +182,36 @@ plt.savefig("clusters.png", dpi=300)
 mpi-compute/
 ├── CMakeLists.txt              # 构建文件
 ├── README.md                   # 本文件
-├── .gitignore                  # 确定哪些文件不被记录追踪
+├── .gitignore
+├── pyproject.toml              # Python 依赖管理 (uv)
+├── main.py                     # Python 入口占位
 ├── src/
 │   ├── config.json             # 运行配置（改此文件，无需重新编译）
 │   ├── main.cpp                # 入口（读 config.json 运行）
-│   ├── kmeans.cpp
-│   ├── kmeans_sequential.cpp
-│   ├── kmeans_omp.cpp
-│   ├── kmeans_kernels.cu
-│   ├── dataset.cpp
-│   └── checkpoint.cpp
+│   ├── kmeans.cpp              # K-Means 主类 + 自动 K 推导
+│   ├── kmeans_sequential.cpp   # CPU 串行后端（验证）
+│   ├── kmeans_omp.cpp          # OpenMP 并行后端
+│   ├── kmeans_kernels.cu       # CUDA 后端
+│   ├── dataset.cpp             # 数据集加载（mmap / 流式 / 交错零拷贝）
+│   └── checkpoint.cpp          # 断点继续
 ├── include/
-│   ├── types.hpp
-│   ├── dataset.hpp
-│   ├── kmeans.hpp
-│   ├── kmeans_kernels.cuh
-│   └── checkpoint.hpp
+│   ├── types.hpp               # 类型定义 & 全局常量
+│   ├── dataset.hpp             # 数据集管理（SoA / Interleaved 双模式）
+│   ├── kmeans.hpp              # K-Means 主接口
+│   ├── kmeans_kernels.cuh      # CUDA kernel 声明
+│   └── checkpoint.hpp          # 断点继续
 ├── data/                       # 输入数据（不提交）
+│   └── .gitkeep
+├── results/                    # 运行结果（不提交）
 │   └── .gitkeep
 ├── docs/
 │   ├── design.md               # 设计文档
 │   └── requirements.md         # 代码规范
-├── build/                      # 构建产物（不提交）
-├── results/                    # 运行结果（不提交）
-│   └── .gitkeep
-└── script/
-    ├── CMakeLists.txt
-    └── dat_out.cpp
+├── script/
+│   ├── render.py               # 聚类结果渲染脚本 (uv run)
+│   ├── CMakeLists.txt
+│   └── dat_out.cpp             # 数据预览工具
+└── build/                      # 构建产物（不提交）
 ```
 
 ---
