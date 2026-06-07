@@ -48,3 +48,6 @@ Thumbs.db
 # Data output (optional, uncomment if needed)
 # data/*.bin
 # data/*.dat
+results/*
+!results/.gitkeep
+.cache
