@@ -182,6 +182,5 @@ int main(int argc, char** argv) {
       std::fprintf(stderr, "Error: 无法写入输出文件 %s\n", config.output_path.c_str());
     }
   }
-
   return 0;
 }
