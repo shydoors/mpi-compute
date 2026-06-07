@@ -30,118 +30,117 @@
 #include <string>
 
 // ============================================================
-// JSON 解析器（极简，仅支持本项目需要的 JSON 子集）
+// 极简 JSON 解析 — 只读 "key": value 模式的键值对
 // ============================================================
 namespace {
 
-// 跳过空白字符
-static void skip_ws(const std::string& s, size_t& pos) {
-  while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\t' ||
-         s[pos] == '\n' || s[pos] == '\r'))
-    ++pos;
+static std::string load_file(const std::string& path) {
+  std::ifstream ifs(path);
+  if (!ifs) return "";
+  return std::string((std::istreambuf_iterator<char>(ifs)),
+                      std::istreambuf_iterator<char>());
 }
 
-// 读取一个 JSON 字符串（带引号）
-static std::string parse_json_string(const std::string& s, size_t& pos) {
-  skip_ws(s, pos);
-  if (pos >= s.size() || s[pos] != '"') return "";
-  ++pos; // 跳过开头的 "
-  std::string result;
-  while (pos < s.size() && s[pos] != '"') {
-    if (s[pos] == '\\' && pos + 1 < s.size()) {
-      ++pos;
-      if (s[pos] == 'n') result += '\n';
-      else if (s[pos] == 't') result += '\t';
-      else result += s[pos];
-    } else {
-      result += s[pos];
+// 去掉字符串首尾空白
+static std::string trim(const std::string& s) {
+  size_t a = 0, b = s.size();
+  while (a < b && (s[a] == ' ' || s[a] == '\t' || s[a] == '\n' || s[a] == '\r')) ++a;
+  while (b > a && (s[b-1] == ' ' || s[b-1] == '\t' || s[b-1] == '\n' || s[b-1] == '\r')) --b;
+  return s.substr(a, b - a);
+}
+
+// 去掉字符串首尾的引号
+static std::string unquote(const std::string& s) {
+  auto t = trim(s);
+  if (t.size() >= 2 && t.front() == '"' && t.back() == '"')
+    return t.substr(1, t.size() - 2);
+  return t;
+}
+
+// 在 content 中找到 key 对应的 value（原始字符串，含引号）
+static std::string find_value_raw(const std::string& content, const std::string& key) {
+  // 查找 "key":
+  std::string pattern = '"' + key + '"';
+  size_t pos = content.find(pattern);
+  if (pos == std::string::npos) return "";
+
+  // 找冒号
+  pos = content.find(':', pos + pattern.size());
+  if (pos == std::string::npos) return "";
+
+  // 跳过空白
+  ++pos;
+  while (pos < content.size() && (content[pos] == ' ' || content[pos] == '\t' ||
+         content[pos] == '\n' || content[pos] == '\r')) ++pos;
+  if (pos >= content.size()) return "";
+
+  // 判断 value 类型
+  if (content[pos] == '"') {
+    // 字符串：找匹配的结束引号
+    size_t end = pos + 1;
+    while (end < content.size()) {
+      if (content[end] == '"' && (end == pos + 1 || content[end-1] != '\\')) break;
+      ++end;
     }
-    ++pos;
-  }
-  if (pos < s.size()) ++pos; // 跳过结尾的 "
-  return result;
-}
-
-// 读取一个 JSON 值（number / true / false / null）
-static std::string parse_json_value(const std::string& s, size_t& pos) {
-  skip_ws(s, pos);
-  size_t start = pos;
-  if (pos < s.size() && s[pos] == '"') {
-    return parse_json_string(s, pos);
-  }
-  while (pos < s.size() && s[pos] != ',' && s[pos] != '}' &&
-         s[pos] != ']' && s[pos] != ' ' && s[pos] != '\t' &&
-         s[pos] != '\n' && s[pos] != '\r') {
-    ++pos;
-  }
-  return s.substr(start, pos - start);
-}
-
-// 解析 JSON 对象中的顶层键值对（只读我们关心的字段）
-class SimpleJsonReader {
-public:
-  explicit SimpleJsonReader(const std::string& path) {
-    std::ifstream ifs(path);
-    if (ifs) {
-      content_ = std::string((std::istreambuf_iterator<char>(ifs)),
-                              std::istreambuf_iterator<char>());
+    if (end < content.size()) ++end;
+    return content.substr(pos, end - pos);
+  } else if (content[pos] == '{' || content[pos] == '[') {
+    // 对象或数组：找匹配的括号
+    char open = content[pos];
+    char close = (open == '{') ? '}' : ']';
+    int depth = 1;
+    size_t end = pos + 1;
+    while (end < content.size() && depth > 0) {
+      if (content[end] == open) ++depth;
+      else if (content[end] == close) --depth;
+      ++end;
     }
+    return content.substr(pos, end - pos);
+  } else {
+    // 数值 / true / false / null：到逗号或括号或空白结束
+    size_t end = pos;
+    while (end < content.size() && content[end] != ',' && content[end] != '}' &&
+           content[end] != ']' && content[end] != ' ' && content[end] != '\t' &&
+           content[end] != '\n' && content[end] != '\r') ++end;
+    return content.substr(pos, end - pos);
   }
+}
 
-  bool valid() const { return !content_.empty(); }
+// 读字符串值（返回去掉引号的内容）
+static std::string read_string(const std::string& content, const std::string& key) {
+  return unquote(find_value_raw(content, key));
+}
 
-  // 读取字符串值：先找到 key，再读其后的 value
-  std::string get_string(const std::string& key) const {
-    size_t pos = content_.find('"' + key + '"');
-    if (pos == std::string::npos) return "";
-    pos = content_.find(':', pos + key.size() + 2);
-    if (pos == std::string::npos) return "";
-    ++pos;
-    return parse_json_value(content_, pos);
-  }
+// 从嵌套对象中读字符串值
+static std::string read_nested_string(const std::string& content,
+                                      const std::string& obj_key,
+                                      const std::string& field_key) {
+  std::string obj = find_value_raw(content, obj_key);
+  if (obj.empty()) return "";
+  return unquote(find_value_raw(obj, field_key));
+}
 
-  int get_int(const std::string& key) const {
-    auto s = get_string(key);
-    if (s.empty()) return 0;
-    return std::stoi(s);
-  }
+// 读整数
+static int read_int(const std::string& content, const std::string& key) {
+  auto s = trim(find_value_raw(content, key));
+  if (s.empty()) return 0;
+  return std::stoi(s);
+}
 
-  double get_double(const std::string& key) const {
-    auto s = get_string(key);
-    if (s.empty()) return 0.0;
-    return std::stod(s);
-  }
+// 读浮点数
+static double read_double(const std::string& content, const std::string& key) {
+  auto s = trim(find_value_raw(content, key));
+  if (s.empty()) return 0.0;
+  return std::stod(s);
+}
 
-  bool get_bool(const std::string& key) const {
-    auto s = get_string(key);
-    if (s == "true") return true;
-    if (s == "false") return false;
-    return std::stoi(s) != 0;
-  }
-
-  // 读取嵌套对象中的字段：如 "output" -> "render_max_points"
-  std::string get_nested_string(const std::string& obj_key,
-                                const std::string& field_key) const {
-    size_t pos = content_.find('"' + obj_key + '"');
-    if (pos == std::string::npos) return "";
-    pos = content_.find('"' + field_key + '"', pos + obj_key.size() + 2);
-    if (pos == std::string::npos) return "";
-    pos = content_.find(':', pos + field_key.size() + 2);
-    if (pos == std::string::npos) return "";
-    ++pos;
-    return parse_json_value(content_, pos);
-  }
-
-  int get_nested_int(const std::string& obj_key,
-                     const std::string& field_key) const {
-    auto s = get_nested_string(obj_key, field_key);
-    if (s.empty()) return 0;
-    return std::stoi(s);
-  }
-
-private:
-  std::string content_;
-};
+// 读布尔值
+static bool read_bool(const std::string& content, const std::string& key) {
+  auto s = trim(find_value_raw(content, key));
+  if (s == "true") return true;
+  if (s == "false") return false;
+  return std::stoi(s) != 0;
+}
 
 } // anonymous namespace
 
@@ -314,31 +313,33 @@ static void print_result(const KMeansResult& result) {
 }
 
 // ============================================================
-// 主入口 — 读 config.json → 运行 K-Means → 输出结果
+// 主入口
 // ============================================================
 static void kmeans_run() {
   // ---- 1. 读取配置文件 ----
-  SimpleJsonReader cfg("src/config.json");
-  if (!cfg.valid()) {
-    std::fprintf(stderr, "Error: 无法读取 src/config.json\n");
-    std::fprintf(stderr, "请确保该文件存在且格式正确。\n");
+  std::string json = load_file("src/config.json");
+  if (json.empty()) {
+    std::fprintf(stderr, "Error: 无法读取 src/config.json\n"
+                         "请确保该文件存在。\n");
     std::getchar();
     return;
   }
 
   // ---- 2. 构建配置 ----
   KMeansConfig config;
-  config.data_path = cfg.get_string("data_path");
-  if (config.data_path.empty()) {
-    config.data_path = "data/a.dat";
+
+  config.data_path = read_string(json, "data_path");
+  if (config.data_path.empty()) config.data_path = "data/a.dat";
+  if (config.data_path.find('/') == std::string::npos &&
+      config.data_path.find('\\') == std::string::npos) {
+    // 如果是单纯文件名，自动补项目根
   }
 
-  std::string backend_str = cfg.get_string("backend");
-  // config.json 中 backend 是对象，需要读 "value"
-  if (backend_str.empty() || backend_str.front() == '{') {
-    // 尝试从嵌套对象中读 "value"
-    backend_str = cfg.get_nested_string("backend", "value");
-  }
+  // 读 backend：优先从嵌套对象中读 "value"
+  std::string backend_str = read_nested_string(json, "backend", "value");
+  // 如果没有嵌套对象，直接读顶层
+  if (backend_str.empty()) backend_str = read_string(json, "backend");
+
   if (backend_str == "seq")       config.backend = Backend::Sequential;
   else if (backend_str == "omp")  config.backend = Backend::OpenMP;
   else if (backend_str == "cuda") config.backend = Backend::CUDA;
@@ -348,19 +349,28 @@ static void kmeans_run() {
     config.backend = Backend::OpenMP;
   }
 
-  config.auto_k         = cfg.get_bool("auto_k");
-  config.fixed_k        = static_cast<u32>(cfg.get_int("fixed_k"));
-  config.max_iterations = cfg.get_int("max_iterations");
-  config.threshold      = cfg.get_double("threshold");
-  config.streaming      = cfg.get_bool("streaming");
-  config.checkpoint_path = cfg.get_string("checkpoint_path");
-  config.resume         = cfg.get_bool("resume");
+  config.auto_k         = read_bool(json, "auto_k");
+  config.fixed_k        = static_cast<u32>(read_int(json, "fixed_k"));
+  config.max_iterations = read_int(json, "max_iterations");
+  config.threshold      = read_double(json, "threshold");
+  config.streaming      = read_bool(json, "streaming");
+  config.checkpoint_path = read_string(json, "checkpoint_path");
+  config.resume         = read_bool(json, "resume");
   config.output_path    = "";
 
-  // 渲染采样上限（从 output 嵌套对象读）
+  // 渲染采样上限
   u64 render_max_points = static_cast<u64>(
-      cfg.get_nested_int("output", "render_max_points"));
-  if (render_max_points == 0) render_max_points = 100000;
+      read_nested_string(json, "output", "render_max_points").empty()
+        ? 100000
+        : read_int(json, "render_max_points"));
+  // 从嵌套对象读出
+  {
+    auto obj = find_value_raw(json, "output");
+    if (!obj.empty()) {
+      auto v = read_int(obj, "render_max_points");
+      if (v > 0) render_max_points = static_cast<u64>(v);
+    }
+  }
 
   // ---- 3. 打印配置 ----
   std::printf("========================================\n");
@@ -390,7 +400,6 @@ static void kmeans_run() {
   // ---- 5. 输出结果 ----
   print_result(result);
 
-  // 获取数据点数（重新加载文件头即可）
   u64 num_points = 0;
   {
     Dataset tmp;
@@ -399,14 +408,12 @@ static void kmeans_run() {
     }
   }
 
-  // 时间戳
   auto now  = std::chrono::system_clock::now();
   auto tt   = std::chrono::system_clock::to_time_t(now);
   char timestamp[64];
   std::strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S",
                 std::localtime(&tt));
 
-  // 保存
   ensure_output_dir();
   save_log(config, result, timestamp);
   save_labels_bin(result, num_points, timestamp);
