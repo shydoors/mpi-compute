@@ -6,7 +6,7 @@
         "description": "seq (串行) / omp (OpenMP多核) / cuda (GPU加速)"
     },
     "auto_k": false,
-    "fixed_k": 5,
+    "fixed_k": 10,
     "max_iterations": 30,
     "threshold": 1e-4,
     "streaming": false,
