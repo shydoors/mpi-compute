@@ -3,17 +3,11 @@
 K-Means 聚类结果渲染脚本
 
 用法:
-  # 交互式选择运行结果
   uv run script/render.py
 
-  # 直接指定时间戳
-  uv run script/render.py 20260607_112634
-
-依赖 (uv 自动管理):
-  numpy, matplotlib
+依赖 (uv 自动管理): numpy, matplotlib
 """
 
-import argparse
 import os
 import struct
 import csv
@@ -21,9 +15,16 @@ import sys
 from pathlib import Path
 
 
-# ============================================================
+# ════════════════════════════════════════════════════════════
+# 用户参数
+# ════════════════════════════════════════════════════════════
+TIMESTAMP = "20260607_125351"  # 留空则交互式选择；填时间戳直接渲染
+OUTPUT    = f"results/{TIMESTAMP}/clusters_{TIMESTAMP}.png" if TIMESTAMP else None
+
+
+# ════════════════════════════════════════════════════════════
 # 读取 labels.bin
-# ============================================================
+# ════════════════════════════════════════════════════════════
 def read_labels(bin_path: str):
     import numpy as np
     with open(bin_path, "rb") as f:
@@ -35,15 +36,15 @@ def read_labels(bin_path: str):
     return labels
 
 
-# ============================================================
+# ════════════════════════════════════════════════════════════
 # 读取 render.csv
-# ============================================================
+# ════════════════════════════════════════════════════════════
 def read_render(csv_path: str):
     import numpy as np
     xs, ys, labs = [], [], []
     with open(csv_path, "r") as f:
         reader = csv.reader(f)
-        next(reader)  # 跳过表头
+        next(reader)
         for row in reader:
             xs.append(float(row[0]))
             ys.append(float(row[1]))
@@ -51,15 +52,15 @@ def read_render(csv_path: str):
     return np.array(xs), np.array(ys), np.array(labs)
 
 
-# ============================================================
+# ════════════════════════════════════════════════════════════
 # 读取 centers.csv
-# ============================================================
+# ════════════════════════════════════════════════════════════
 def read_centers(csv_path: str):
     import numpy as np
     cxs, cys, ids = [], [], []
     with open(csv_path, "r") as f:
         reader = csv.reader(f)
-        next(reader)  # 跳过表头
+        next(reader)
         for row in reader:
             cxs.append(float(row[0]))
             cys.append(float(row[1]))
@@ -67,11 +68,10 @@ def read_centers(csv_path: str):
     return np.array(cxs), np.array(cys), np.array(ids)
 
 
-# ============================================================
+# ════════════════════════════════════════════════════════════
 # 交互式选择
-# ============================================================
+# ════════════════════════════════════════════════════════════
 def pick_folder(results_dir: str) -> str:
-    """列出 results/ 下所有时间戳文件夹，让用户选择"""
     results_path = Path(results_dir)
     if not results_path.exists():
         print(f"Error: 目录不存在: {results_dir}")
@@ -101,9 +101,9 @@ def pick_folder(results_dir: str) -> str:
         print(f"  请输入 1-{len(folders)} 之间的数字")
 
 
-# ============================================================
+# ════════════════════════════════════════════════════════════
 # 主渲染
-# ============================================================
+# ════════════════════════════════════════════════════════════
 def render(run_dir: str, output_path: str = None):
     import matplotlib
     matplotlib.use("Agg")
@@ -126,7 +126,7 @@ def render(run_dir: str, output_path: str = None):
             sys.exit(1)
 
     print(f"\n  Timestamp:     {timestamp}")
-    print(f"  Dir:     {run_dir}")
+    print(f"  Dir:           {run_dir}")
 
     backend = "?"
     if result_path.exists():
@@ -141,10 +141,10 @@ def render(run_dir: str, output_path: str = None):
     cxs, cys, center_ids = read_centers(str(centers_path))
 
     k = len(cxs)
-    print(f"  Clusters (K):     {k}")
-    print(f"  Backend:         {backend}")
-    print(f"  Render points:     {len(xs):,}")
-    print(f"  Total labels:     {len(labels):,}")
+    print(f"  Clusters (K):  {k}")
+    print(f"  Backend:       {backend}")
+    print(f"  Render points: {len(xs):,}")
+    print(f"  Total labels:  {len(labels):,}")
 
     fig, ax = plt.subplots(figsize=(16, 12), dpi=150)
 
@@ -183,60 +183,30 @@ def render(run_dir: str, output_path: str = None):
 
     if output_path is None:
         output_path = f"clusters_{timestamp}.png"
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     plt.savefig(output_path, dpi=150)
     plt.close(fig)
 
-    print(f"  Saved:   {output_path}")
-    print(f"  DPI:       150 dpi, {fig.get_size_inches()[0]:.0f}x{fig.get_size_inches()[1]:.0f} in")
+    print(f"  Saved:         {output_path}")
+    print(f"  DPI:           150 dpi, {fig.get_size_inches()[0]:.0f}x{fig.get_size_inches()[1]:.0f} in")
 
 
-# ============================================================
+# ════════════════════════════════════════════════════════════
 # 入口
-# ============================================================
-def main():
-    parser = argparse.ArgumentParser(
-        description="K-Means 聚类结果渲染脚本",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""\
-示例:
-  uv run script/render.py               # 交互式选择
-  uv run script/render.py 20260607_112634  # 直接指定
-"""
-    )
-    parser.add_argument(
-        "timestamp", nargs="?",
-        help="运行结果的时间戳文件夹名，缺省则交互式选择"
-    )
-    parser.add_argument(
-        "--output", "-o", default=None,
-        help="输出图片路径（缺省: clusters_时间戳.png）"
-    )
-    parser.add_argument(
-        "--results-dir", "-r", default=None,
-        help="results 目录路径（缺省自动检测项目根目录下的 results/）"
-    )
+# ════════════════════════════════════════════════════════════
+if __name__ == "__main__":
+    script_dir = Path(__file__).resolve().parent
+    project_dir = script_dir.parent
+    results_dir = str(project_dir / "results")
 
-    args = parser.parse_args()
-
-    # 自动检测 results/ 目录
-    if args.results_dir:
-        results_dir = args.results_dir
-    else:
-        script_dir = Path(__file__).resolve().parent
-        project_dir = script_dir.parent
-        results_dir = str(project_dir / "results")
-
-    # 确定运行结果目录
-    if args.timestamp:
-        run_dir = os.path.join(results_dir, args.timestamp)
+    if TIMESTAMP:
+        run_dir = os.path.join(results_dir, TIMESTAMP)
         if not os.path.isdir(run_dir):
             print(f"Error: 找不到运行结果: {run_dir}")
             sys.exit(1)
     else:
         run_dir = pick_folder(results_dir)
+        # 交互式选择时，OUTPUT 已取 None，图片存当前目录
+        OUTPUT = None
 
-    render(run_dir, args.output)
-
-
-if __name__ == "__main__":
-    main()
+    render(run_dir, OUTPUT)
