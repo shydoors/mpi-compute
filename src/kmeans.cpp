@@ -16,7 +16,6 @@
 #include "checkpoint.hpp"
 #include "dataset.hpp"
 #include "types.hpp"
-
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -40,26 +39,21 @@ KMeans::~KMeans() = default;
 // ============================================================
 KMeansResult KMeans::run() {
   using Clock = std::chrono::high_resolution_clock;
-
   KMeansResult result;
   auto t_start = Clock::now();
-
   // ---------- 1. 加载数据 ----------
   auto t_load_start = Clock::now();
   Dataset data;
   bool loaded = false;
-
   if (config_.streaming) {
     loaded = data.load_streaming(config_.data_path, config_.stream_chunk_size);
   } else {
     loaded = data.load(config_.data_path, config_.use_mmap);
   }
-
   if (!loaded) {
     std::fprintf(stderr, "Error: 数据加载失败\n");
     return result;
   }
-
   auto t_load_end = Clock::now();
   result.time_load = std::chrono::duration<f64>(t_load_end - t_load_start).count();
   result.labels = std::make_unique<u32[]>(data.size());
