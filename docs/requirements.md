@@ -1,5 +1,4 @@
 # 语义准确
-
 1. 使用 `cstdint`库来声明整数类型
 
 * `std::int32_t` ==> `int`
@@ -15,15 +14,14 @@
 6. 优先使用 `const` 和 `constexpr`，避免使用 `#define` 定义常量。
 7. 智能指针优先于裸指针，避免手动 `new/delete`。
 8. 函数参数传递：非基本类型使用 `const &`（只读）或 `&`（可写），避免不必要的拷贝。
-
 # 版本
+
 | KEY              | VALUE                         |
 |:-----------------|:------------------------------|
 | C++ 标准           | C++17                         |
 | OpenMP           | >= 4.5                        |
-| MPI              | OpenMPI >= 4.0 / MPICH >= 3.3 |
 | CMake            | >= 3.16                       |
-| nvcc主机侧（gcc/g++） | gcc (GCC) 16.1.1 20260430     |
+| nvcc主机侧（gcc/g++） | gcc (GCC) 16.1.1 20260430 (支持omp, -std=c++17即可)    |
 | nvcc主机侧（msvc）    | VS2019                        |
 
 # 编译器参数
@@ -31,13 +29,13 @@
 | KEY     | VALUE                                      |
 |:--------|:-------------------------------------------|
 | DEBUG   | `-g -O0 -std=c++17 -Wall -Wextra -fopenmp` |
-| RELEASE | `-O2 -std=c++17 -Wall -Wextra -fopenmp`    |
+| RELEASE | `-O2 -std=c++17 -Wall -Wextra -fopenmp` |
 
 # 项目结构
-
 * `src/` — 源文件
 * `include/` — 头文件
 * `build/` — 构建产物（不提交到 git）
-* `data/` — 输入/输出数据
+* `data/` — 输入
+* `result/` — 输出文件，以时间戳为文件夹（不提交到 git）
 * `docs/` — 文档
 * `script/`- 脚本，包括但不限于预处理文件
