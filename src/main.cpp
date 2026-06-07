@@ -1,131 +1,85 @@
 /**
  * @file main.cpp
- * @brief K-Means 聚类 — 主入口
+ * @brief K-Means 聚类 — 主入口（函数式调用，VS2019 直接运行版）
  *
- * 用法:
- *   ./kmeans --data <path> [options]
+ * 使用方法（VS2019）:
+ *   打开解决方案 → 按 F5（调试运行）或 Ctrl+F5（直接运行）即可。
+ *   所有参数在下方 kmeans_run() 开头的变量中设置，无需命令行传参。
  *
- * 选项:
- *   --data <path>          数据文件路径（必需，相对项目根目录）
- *   --backend <seq|omp|cuda>  计算后端 (默认 cuda)
- *   --auto-k <0|1>         是否自动推导 K (默认 1)
- *   --k <uint>             手动指定 K (auto-k=0 时生效)
- *   --max-iter <int>       最大迭代次数 (默认 300)
- *   --threshold <float>    收敛阈值 (默认 1e-8)
- *   --checkpoint <path>    checkpoint 文件路径
- *   --resume               从 checkpoint 恢复
- *   --output <path>        聚类结果输出路径
- *   --streaming            使用流式读取
- *   --no-mmap              不使用 mmap
- *   --help                 显示帮助
+ * 运行结果自动保存到 result_log/ 文件夹，以时间戳命名。
  */
 
 #include "kmeans.hpp"
 #include "types.hpp"
-
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <iostream>
 #include <string>
 
 // ============================================================
-// 命令行解析（轻量级，无外部依赖）
+// 保存结果到文件
 // ============================================================
-static void print_help(const char* prog) {
-  std::fprintf(stderr,
-    "用法: %s --data <path> [选项]\n"
-    "\n"
-    "必需:\n"
-    "  --data <path>          数据文件路径（相对项目根目录）\n"
-    "\n"
-    "算法:\n"
-    "  --backend <seq|omp|cuda>  计算后端 (默认 cuda)\n"
-    "  --auto-k <0|1>         是否自动推导 K (默认 1)\n"
-    "  --k <uint>             手动指定 K\n"
-    "  --max-iter <int>       最大迭代次数 (默认 300)\n"
-    "  --threshold <float>    收敛阈值 (默认 1e-8)\n"
-    "\n"
-    "I/O:\n"
-    "  --checkpoint <path>    checkpoint 文件路径\n"
-    "  --resume               从 checkpoint 恢复\n"
-    "  --output <path>        聚类结果输出路径\n"
-    "  --streaming            使用流式读取\n"
-    "  --no-mmap              不使用 mmap\n"
-    "\n"
-    "其它:\n"
-    "  --help                 显示此帮助\n",
-    prog);
-}
+static void save_result_to_file(const KMeansConfig& config,
+                                const KMeansResult& result,
+                                const char* timestamp) {
+  std::string dir = "result_log";
+  std::string filename = dir + "/result_" + timestamp + ".txt";
 
-static KMeansConfig parse_args(int argc, char** argv) {
-  KMeansConfig config;
+  // 创建目录（兼容 Windows 和 Linux）
+#ifdef _WIN32
+  std::system(("if not exist " + dir + " mkdir " + dir).c_str());
+#else
+  std::system(("mkdir -p " + dir).c_str());
+#endif
 
-  for (i32 i = 1; i < argc; ++i) {
-    std::string_view arg{argv[i]};
-
-    auto next = [&]() -> std::string_view {
-      if (i + 1 >= argc) {
-        std::fprintf(stderr, "Error: %s requires an argument\n", argv[i]);
-        std::exit(1);
-      }
-      return std::string_view{argv[++i]};
-    };
-
-    if (arg == "--help") {
-      print_help(argv[0]);
-      std::exit(0);
-    } else if (arg == "--data") {
-      config.data_path = std::string{next()};
-    } else if (arg == "--backend") {
-      auto val = next();
-      if (val == "seq")       config.backend = Backend::Sequential;
-      else if (val == "omp")  config.backend = Backend::OpenMP;
-      else if (val == "cuda") config.backend = Backend::CUDA;
-      else {
-        std::fprintf(stderr, "Error: unknown backend '%s'\n", std::string{val}.c_str());
-        std::fprintf(stderr, "  Valid: seq, omp, cuda\n");
-        std::exit(1);
-      }
-    } else if (arg == "--auto-k") {
-      config.auto_k = (std::stoi(std::string{next()}) != 0);
-    } else if (arg == "--k") {
-      config.fixed_k = static_cast<u32>(std::stoul(std::string{next()}));
-      config.auto_k = false;
-    } else if (arg == "--max-iter") {
-      config.max_iterations = static_cast<i32>(std::stoi(std::string{next()}));
-    } else if (arg == "--threshold") {
-      config.threshold = std::stod(std::string{next()});
-    } else if (arg == "--checkpoint") {
-      config.checkpoint_path = std::string{next()};
-    } else if (arg == "--resume") {
-      config.resume = true;
-    } else if (arg == "--output") {
-      config.output_path = std::string{next()};
-    } else if (arg == "--streaming") {
-      config.streaming = true;
-    } else if (arg == "--no-mmap") {
-      config.use_mmap = false;
-    } else {
-      std::fprintf(stderr, "Error: unknown option '%s'\n", std::string{arg}.c_str());
-      print_help(argv[0]);
-      std::exit(1);
-    }
+  std::FILE* fp = std::fopen(filename.c_str(), "w");
+  if (!fp) {
+    std::fprintf(stderr, "Error: 无法创建结果文件 %s\n", filename.c_str());
+    return;
   }
 
-  if (config.data_path.empty()) {
-    std::fprintf(stderr, "Error: --data is required\n");
-    print_help(argv[0]);
-    std::exit(1);
-  }
+  std::fprintf(fp, "========================================\n");
+  std::fprintf(fp, "  K-Means 聚类运行结果\n");
+  std::fprintf(fp, "  运行时间: %s\n", timestamp);
+  std::fprintf(fp, "========================================\n\n");
 
-  return config;
+  std::fprintf(fp, "--- 配置参数 ---\n");
+  std::fprintf(fp, "  数据文件:        %s\n", config.data_path.c_str());
+  std::fprintf(fp, "  计算后端:        %s\n", backend_name(config.backend));
+  std::fprintf(fp, "  自动推导 K:      %s\n", config.auto_k ? "是" : "否");
+  if (!config.auto_k) {
+    std::fprintf(fp, "  指定 K:          %u\n", config.fixed_k);
+  }
+  std::fprintf(fp, "  最大迭代次数:    %d\n", config.max_iterations);
+  std::fprintf(fp, "  收敛阈值:        %.1e\n", config.threshold);
+  std::fprintf(fp, "  流式读取:        %s\n", config.streaming ? "是" : "否");
+  std::fprintf(fp, "  断点继续:        %s\n",
+               config.resume ? "是 (恢复)" :
+               (!config.checkpoint_path.empty() ? "是 (保存)" : "否"));
+  if (!config.checkpoint_path.empty()) {
+    std::fprintf(fp, "  Checkpoint 路径: %s\n", config.checkpoint_path.c_str());
+  }
+  std::fprintf(fp, "\n");
+  std::fprintf(fp, "--- 运行结果 ---\n");
+  std::fprintf(fp, "  簇数 (K):          %u\n", result.k);
+  std::fprintf(fp, "  迭代次数:          %d\n", result.iterations);
+  std::fprintf(fp, "  SSE (Inertia):     %.6e\n", result.inertia);
+  std::fprintf(fp, "  加载时间:          %.3f s\n", result.time_load);
+  std::fprintf(fp, "  自动 K 推导时间:   %.3f s\n", result.time_auto_k);
+  std::fprintf(fp, "  迭代时间:          %.3f s\n", result.time_iterate);
+  std::fprintf(fp, "  总运行时间:        %.3f s\n", result.time_total);
+  std::fprintf(fp, "\n");
+  std::fprintf(fp, "========================================\n");
+  std::fclose(fp);
+  std::printf("  结果已保存至: %s\n", filename.c_str());
 }
 
 // ============================================================
-// 输出结果
+// 控制台输出结果
 // ============================================================
 static void print_result(const KMeansResult& result) {
   std::printf("\n========== K-Means 结果 ==========\n");
@@ -140,47 +94,110 @@ static void print_result(const KMeansResult& result) {
 }
 
 // ============================================================
-// 主程序
+// 函数式入口 — 直接修改下方变量即可切换配置
 // ============================================================
-int main(int argc, char** argv) {
-  auto config = parse_args(argc, argv);
+static void kmeans_run() {
+  // ==========================================================
+  //  【在这里修改参数】
+  //  改完直接按 F5 运行
+  // ==========================================================
 
-  std::printf("K-Means Clustering\n");
+  // --- 数据文件路径（相对项目根目录） ---
+  std::string data_path = "data/a.dat";
+
+  // --- 计算后端 ---
+  // 可选值: "seq"  (串行)
+  //         "omp"  (OpenMP 多核)
+  //         "cuda" (GPU 加速)
+  std::string backend = "seq";
+
+  // --- 簇数 K ---
+  // true  = 自动推导最优 K（Kneedle 肘部检测）
+  // false = 使用下方 fixed_k 指定的值
+  bool auto_k = false;
+
+  // 手动指定 K（仅在 auto_k = false 时生效）
+  u32 fixed_k = 5;
+
+  // --- 迭代控制 ---
+  i32 max_iter    = 30;     // 最大迭代次数
+  f64 threshold   = 1e-4;   // 收敛阈值（中心移动量小于此值时停止）
+
+  // --- 读取方式 ---
+  bool streaming  = false;  // true = 流式读取（内存不足时使用）
+
+  // --- 断点继续 ---
+  std::string checkpoint_path = "";  // 非空则启用 checkpoint 功能
+  bool resume   = false;             // true = 从 checkpoint 恢复
+
+  // ==========================================================
+  //  以下代码一般无需修改
+  // ==========================================================
+
+  std::printf("========================================\n");
+  std::printf("  K-Means Clustering\n");
+  std::printf("========================================\n\n");
+
+  // 构建配置对象
+  KMeansConfig config;
+  config.data_path = data_path;
+
+  if (backend == "seq")       config.backend = Backend::Sequential;
+  else if (backend == "omp")  config.backend = Backend::OpenMP;
+  else if (backend == "cuda") config.backend = Backend::CUDA;
+  else {
+    std::fprintf(stderr, "Error: 未知后端 '%s'，使用 seq\n", backend.c_str());
+    config.backend = Backend::Sequential;
+  }
+
+  config.auto_k        = auto_k;
+  config.fixed_k       = fixed_k;
+  config.max_iterations = max_iter;
+  config.threshold     = threshold;
+  config.streaming     = streaming;
+  config.checkpoint_path = checkpoint_path;
+  config.resume        = resume;
+  config.output_path   = "";  // 结果保存由本函数统一处理
+
+  // 打印配置
   std::printf("  数据文件:    %s\n", config.data_path.c_str());
   std::printf("  后端:        %s\n", backend_name(config.backend));
-  std::printf("  自动 K:      %s\n", config.auto_k ? "yes" : "no");
+  std::printf("  自动 K:      %s\n", config.auto_k ? "是" : "否");
   if (!config.auto_k) {
     std::printf("  固定 K:      %u\n", config.fixed_k);
   }
   std::printf("  最大迭代:    %d\n", config.max_iterations);
   std::printf("  收敛阈值:    %.1e\n", config.threshold);
-  std::printf("  流式读取:    %s\n", config.streaming ? "yes" : "no");
+  std::printf("  流式读取:    %s\n", config.streaming ? "是" : "否");
   std::printf("  断点继续:    %s\n",
-              config.resume ? "yes (resume)" :
-              (!config.checkpoint_path.empty() ? "yes (save)" : "no"));
+              config.resume ? "是 (恢复)" :
+              (!config.checkpoint_path.empty() ? "是 (保存)" : "否"));
   if (!config.checkpoint_path.empty()) {
     std::printf("  Checkpoint:  %s\n", config.checkpoint_path.c_str());
   }
   std::printf("\n");
 
+  // 运行 K-Means
   KMeans kmeans(config);
   auto result = kmeans.run();
 
+  // 控制台输出结果
   print_result(result);
 
-  // 输出聚类结果到文件
-  if (!config.output_path.empty() && result.labels) {
-    std::FILE* fp = std::fopen(config.output_path.c_str(), "wb");
-    if (fp) {
-      // 格式：每个点 (x, y, label) 二进制
-      // x: f64, y: f64, label: u32
-      // labels 长度和数据点数相同
-      // 写入方式由 Dataset 提供，此处简化
-      std::fclose(fp);
-      std::printf("结果已写入: %s\n", config.output_path.c_str());
-    } else {
-      std::fprintf(stderr, "Error: 无法写入输出文件 %s\n", config.output_path.c_str());
-    }
-  }
+  // 保存结果到文件
+  auto now    = std::chrono::system_clock::now();
+  auto tt     = std::chrono::system_clock::to_time_t(now);
+  char timestamp[64];
+  std::strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", std::localtime(&tt));
+  save_result_to_file(config, result, timestamp);
+
+  std::printf("\n运行完毕！按 Enter 键退出...\n");
+  std::getchar();
+}
+// ============================================================
+// 主函数
+// ============================================================
+int main() {
+  kmeans_run();
   return 0;
 }
