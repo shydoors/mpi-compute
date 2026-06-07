@@ -13,24 +13,22 @@
 # 项目结构
 
 ```
-[shydoors@myant mpi-compute]$ tree
-.
-├── CMakeLists.txt
-├── data
-│   ├── a.dat
-│   └── b.dat
-├── docs
-│   ├── design.md
-│   ├── parallelism.md
-│   └── requirements.md
-├── include
-├── README.md
-├── script
-│   ├── check_env.cpp
-│   ├── CMakeLists.txt
-│   └── dat_out.cpp
-├── src
-├── tmp
-├── tmp.1.md
-└── tmp.md
+mpi-compute/
+├── CMakeLists.txt            # 根构建文件
+├── data/                     # 输入/输出数据
+│   ├── a.dat
+│   ├── b.dat
+│   ├── c.dat
+│   └── d.dat
+├── docs/
+│   ├── design.md
+│   ├── parallelism.md
+│   └── requirements.md
+├── include/                  # 头文件
+├── src/                      # 源文件（主项目代码）
+├── script/                   # 工具脚本
+│   ├── CMakeLists.txt
+│   └── dat_out.cpp
+├── build/                    # 构建产物（不提交）
+└── README.md
 ```
