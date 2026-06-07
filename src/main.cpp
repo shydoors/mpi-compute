@@ -7,12 +7,13 @@
  *   2. 编译运行：./build/kmeans（或 VS2019 按 F5）
  *    改 config.json 无需重新编译。
  *
- * config.json 中的路径字段说明:
- *   ProjectsDir — 项目根目录。所有相对路径基于此拼接。
- *     如果为空字符串，则自动检测（向上查找含 data/ 和 src/ 的目录）。
- *     建议在 VS2019 中手动设为项目根目录的绝对路径。
+ * 路径解析规则:
+ *   程序启动时自动检测项目根目录（从 CWD 向上查找含 data/ 和 src/ 的目录）。
+ *   config.json 中的所有相对路径字段（data_path, checkpoint_path 等）
+ *   都会基于 ProjectsDir 拼接为绝对路径后再传给 K-Means 核心。
  *
- *   data_path 等路径字段 — 相对 ProjectsDir 的相对路径，或绝对路径。
+ *   ProjectsDir 也可以在 config.json 中手动指定（绝对路径），
+ *   此时跳过自动检测。
  *
  * 输出文件（自动保存到 results/ 目录）:
  *   result_YYYYMMDD_HHMMSS.txt     — 运行日志
@@ -146,7 +147,7 @@ namespace {
 /// 判断路径是否为绝对路径
 static bool is_absolute_path(const std::string& path) {
   if (path.empty()) return false;
-  if (path[0] == '/') return true;  // Unix
+  if (path[0] == '/') return true;
 #ifdef _WIN32
   if (path.size() >= 2 && std::isalpha(path[0]) && path[1] == ':') return true;
 #endif
@@ -172,30 +173,21 @@ static std::string resolve_path(const std::string& path, const std::string& base
   return join_path(base, path);
 }
 
-/// 自动检测项目根目录：从当前工作目录向上查找，直到发现 data/ 和 src/ 同时存在
+/// 自动检测项目根目录：从 CWD 向上查找，直到发现 data/ 和 src/ 同时存在
 static std::string detect_project_dir() {
   char buf[PATH_MAX];
   if (!::getcwd(buf, sizeof(buf))) return "";
 
-  std::string cwd(buf);
-  // 尝试当前目录
-  auto check = [](const std::string& dir) -> bool {
-    auto data_ok = access((dir + "/data").c_str(), F_OK) == 0;
-    auto src_ok  = access((dir + "/src").c_str(),  F_OK) == 0;
-    return data_ok && src_ok;
-  };
-
-  // 从 CWD 开始向上逐级检查
-  std::string dir = cwd;
+  std::string dir(buf);
   while (true) {
-    if (check(dir)) return dir;
-    // 到根目录了还没找到，就返回空
+    bool has_data = (access((dir + "/data").c_str(), F_OK) == 0);
+    bool has_src  = (access((dir + "/src").c_str(),  F_OK) == 0);
+    if (has_data && has_src) return dir;
+
     if (dir == "/" || dir.empty()) return "";
-    // 取父目录
     auto pos = dir.rfind('/');
     if (pos == std::string::npos) return "";
-    if (pos == 0) { dir = "/"; }
-    else { dir = dir.substr(0, pos); }
+    dir = (pos == 0) ? "/" : dir.substr(0, pos);
   }
 }
 
@@ -374,42 +366,65 @@ static void print_result(const KMeansResult& result) {
 // 主入口
 // ============================================================
 static void kmeans_run() {
-  // ---- 1. 读取配置文件 ----
-  std::string config_path = "src/config.json";
-  std::string json = load_file(config_path);
-  if (json.empty()) {
-    std::fprintf(stderr, "Error: 无法读取 src/config.json\n"
-                         "请确保在项目根目录下运行。\n");
+  // ---- 1. 确定项目根目录 ----
+  // 先自动检测（从 CWD 向上找含 data/ 和 src/ 的目录）
+  std::string projects_dir = detect_project_dir();
+
+  // ---- 2. 定位并读取 config.json ----
+  std::string config_content;
+  if (!projects_dir.empty()) {
+    config_content = load_file(projects_dir + "/src/config.json");
+  }
+  if (config_content.empty()) {
+    // 自动检测失败了，试试从 CWD 读
+    config_content = load_file("src/config.json");
+  }
+  if (config_content.empty()) {
+    // 试试 config.json 里的 ProjectsDir（需要先想办法读到 config.json...）
+    // 到这一步说明确实找不到了，报错
+    std::fprintf(stderr, "Error: 找不到 src/config.json\n"
+                         "请确保在项目根目录下运行。\n"
+                         "或在 config.json 中设置 ProjectsDir 为项目根目录的绝对路径。\n");
     std::getchar();
     return;
   }
 
-  // ---- 2. 确定项目根目录 ----
-  std::string projects_dir = read_string(json, "ProjectsDir");
-  if (projects_dir.empty()) {
-    // 自动检测
-    projects_dir = detect_project_dir();
-    if (projects_dir.empty()) {
-      std::fprintf(stderr, "Error: 无法自动检测项目根目录。\n"
-                           "请在 src/config.json 中设置 ProjectsDir。\n");
-      std::getchar();
-      return;
+  // ---- 3. 从 config.json 中读 ProjectsDir（如果有，覆盖自动检测的结果） ----
+  {
+    std::string cfg_dir = read_string(config_content, "ProjectsDir");
+    if (!cfg_dir.empty()) {
+      // 如果配置里的 ProjectsDir 是相对路径，基于 CWD 拼接
+      if (!is_absolute_path(cfg_dir)) {
+        char buf[PATH_MAX];
+        if (::getcwd(buf, sizeof(buf))) {
+          cfg_dir = join_path(std::string(buf), cfg_dir);
+        }
+      }
+      projects_dir = cfg_dir;
     }
   }
+
+  if (projects_dir.empty()) {
+    std::fprintf(stderr, "Error: 无法确定项目根目录。\n"
+                         "请在 src/config.json 中设置 ProjectsDir。\n");
+    std::getchar();
+    return;
+  }
+
   std::printf("  项目根目录:  %s\n", projects_dir.c_str());
 
-  // ---- 3. 构建配置（先解析相对路径，再拼接为绝对路径） ----
+  // ---- 4. 构建配置 ---- // ---- 3. 构建配置（先解析相对路径，再拼接为绝对路径） ----
   KMeansConfig config;
   config.projects_dir = projects_dir;
 
-  // 从 config.json 读原始路径（可能是相对路径）
-  std::string raw_data_path = read_string(json, "data_path");
+  // 数据路径
+  std::string raw_data_path = read_string(config_content, "data_path");
   if (raw_data_path.empty()) raw_data_path = "data/a.dat";
   config.data_path = resolve_path(raw_data_path, projects_dir);
 
   // 后端
-  std::string backend_str = read_nested_string(json, "backend", "value");
-  if (backend_str.empty()) backend_str = read_string(json, "backend");
+  std::string backend_str = read_nested_string(config_content, "backend", "value");
+  if (backend_str.empty()) backend_str = read_string(config_content, "backend");
   if (backend_str == "seq")       config.backend = Backend::Sequential;
   else if (backend_str == "omp")  config.backend = Backend::OpenMP;
   else if (backend_str == "cuda") config.backend = Backend::CUDA;
@@ -419,21 +434,22 @@ static void kmeans_run() {
     config.backend = Backend::OpenMP;
   }
 
-  config.auto_k         = read_bool(json, "auto_k");
-  config.fixed_k        = static_cast<u32>(read_int(json, "fixed_k"));
-  config.max_iterations = read_int(json, "max_iterations");
-  config.threshold      = read_double(json, "threshold");
-  config.streaming      = read_bool(json, "streaming");
+  config.auto_k         = read_bool(config_content, "auto_k");
+  config.fixed_k        = static_cast<u32>(read_int(config_content, "fixed_k"));
+  config.max_iterations = read_int(config_content, "max_iterations");
+  config.threshold      = read_double(config_content, "threshold");
+  config.streaming      = read_bool(config_content, "streaming");
 
-  // checkpoint 路径也拼接
-  config.checkpoint_path = resolve_path(read_string(json, "checkpoint_path"), projects_dir);
-  config.resume         = read_bool(json, "resume");
-  config.output_path    = "";
+  // checkpoint 路径（同样基于 ProjectsDir 拼接）
+  config.checkpoint_path = resolve_path(
+      read_string(config_content, "checkpoint_path"), projects_dir);
+  config.resume   = read_bool(config_content, "resume");
+  config.output_path = "";
 
   // 渲染采样上限
   u64 render_max_points = 100000;
   {
-    auto obj = find_value_raw(json, "output");
+    auto obj = find_value_raw(config_content, "output");
     if (!obj.empty()) {
       auto v = read_int(obj, "render_max_points");
       if (v > 0) render_max_points = static_cast<u64>(v);
@@ -443,7 +459,7 @@ static void kmeans_run() {
   // 输出目录
   std::string output_dir = projects_dir + "/results";
 
-  // ---- 4. 打印配置 ----
+  // ---- 5. 打印配置 ----
   std::printf("========================================\n");
   std::printf("  K-Means Clustering\n");
   std::printf("========================================\n\n");
@@ -464,11 +480,11 @@ static void kmeans_run() {
   std::printf("  渲染采样:    %lu 点\n", render_max_points);
   std::printf("\n");
 
-  // ---- 5. 运行 K-Means ----
+  // ---- 6. 运行 K-Means ----
   KMeans kmeans(config);
   auto result = kmeans.run();
 
-  // ---- 6. 输出结果 ----
+  // ---- 7. 输出结果 ----
   print_result(result);
 
   u64 num_points = 0;
