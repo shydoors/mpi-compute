@@ -26,7 +26,6 @@
 
 #include "kmeans.hpp"
 #include "types.hpp"
-
 #include <algorithm>
 #include <chrono>
 #include <climits>
@@ -359,13 +358,13 @@ static void kmeans_run() {
   // ---- 2. 定位并读取 config.json ----
   std::string config_content;
   if (!projects_dir.empty()) {
-    config_content = load_file(projects_dir + "/src/config.json");
+    config_content = load_file(projects_dir + "/config.json");
   }
   if (config_content.empty()) {
-    config_content = load_file("src/config.json");
+    config_content = load_file("config.json");
   }
   if (config_content.empty()) {
-    std::fprintf(stderr, "Error: 找不到 src/config.json\n"
+    std::fprintf(stderr, "Error: 找不到 config.json\n"
                          "请确保在项目根目录下运行。\n"
                          "或在 config.json 中设置 ProjectsDir 为项目根目录的绝对路径。\n");
     std::getchar();
@@ -388,7 +387,7 @@ static void kmeans_run() {
 
   if (projects_dir.empty()) {
     std::fprintf(stderr, "Error: 无法确定项目根目录。\n"
-                         "请在 src/config.json 中设置 ProjectsDir。\n");
+                         "请在 config.json 中设置 ProjectsDir。\n");
     std::getchar();
     return;
   }
