@@ -4,7 +4,9 @@
 
 针对 **9+ GiB 超大规模数据集** 做了优化，大文件自动切换为 **mmap 交错零拷贝模式**，无需将数据全量复制到内存。
 
-[项目规范](./docs/requirements.md) | [整体架构](./docs/design.md)
+[项目规范](./docs/requirements.md) 
+
+[整体架构](./docs/design.md)
 
 ---
 
@@ -51,11 +53,11 @@
 
 ### 环境要求
 
-| 依赖 | 版本要求 |
-|:-----|:---------|
-| C++ 标准 | C++17 |
-| CMake | $\ge$ 3.16 |
-| OpenMP | $\ge$ 4.5 |
+| 依赖        | 版本要求       |
+|:----------|:-----------|
+| C++ 标准    | C++17      |
+| CMake     | $\ge$ 3.16 |
+| OpenMP    | $\ge$ 4.5  |
 | CUDA (可选) | 支持 nvcc 编译 |
 
 ### 构建与运行
@@ -90,18 +92,19 @@ OUTPUT    = f"results/{TIMESTAMP}/clusters_{TIMESTAMP}.png" if TIMESTAMP else No
 
 ## 配置文件说明
 
-| 字段 | 说明 | 默认值 |
-|:-----|:-----|:-------|
-| `data_path` | 数据文件路径（相对项目根目录） | `data/a.dat` |
-| `backend` | 计算后端： `seq` / `omp` / `cuda` | `omp` |
-| `auto_k` | 是否自动推导最优 $K$ | `false` |
-| `fixed_k` | 手动指定 $K$（ `auto_k=false` 时生效） | `5` |
-| `max_iterations` | 最大迭代次数 | `30` |
-| `threshold` | 收敛阈值 | `1e-4` |
-| `streaming` | 是否使用流式读取 | `false` |
-| `checkpoint_path` | checkpoint 文件路径（空=不启用） | `""` |
-| `resume` | 是否从 checkpoint 恢复 | `false` |
-| `output.render_max_points` | 渲染 CSV 最多采样点数 | `100000` |
+| 字段                         | 说明                            | 默认值          |
+|:---------------------------|:------------------------------|:-------------|
+| `data_path`                | 数据文件路径（相对项目根目录）               | `data/a.dat` |
+| `backend`                  | 计算后端： `seq` / `omp` / `cuda`  | `omp`        |
+| `auto_k`                   | 是否自动推导最优 $K$                  | `false`      |
+| `fixed_k`                  | 手动指定 $K$（ `auto_k=false` 时生效） | `5`          |
+| `sample_size`              | 自动 K 推导的采样点数                  | `50000`      |
+| `max_iterations`           | 最大迭代次数                        | `30`         |
+| `threshold`                | 收敛阈值                          | `1e-4`       |
+| `streaming`                | 是否使用流式读取                      | `false`      |
+| `checkpoint_path`          | checkpoint 文件路径（空=不启用）        | `""`         |
+| `resume`                   | 是否从 checkpoint 恢复             | `false`      |
+| `output.render_max_points` | 渲染 CSV 最多采样点数                 | `100000`     |
 
 ---
 
@@ -119,10 +122,10 @@ OUTPUT    = f"results/{TIMESTAMP}/clusters_{TIMESTAMP}.png" if TIMESTAMP else No
 
 **格式：**
 
-| 偏移 | 类型 | 内容 |
-|:-----|:-----|:-----|
-| 0 | `u64` | 总点数 $N$ |
-| 8 | `u32[N]` | 每个点所属的簇编号（$0 \sim K-1$） |
+| 偏移 | 类型       | 内容                      |
+|:---|:---------|:------------------------|
+| 0  | `u64`    | 总点数 $N$                 |
+| 8  | `u32[N]` | 每个点所属的簇编号（$0 \sim K-1$） |
 
 **Python 读取：**
 
@@ -182,10 +185,10 @@ mpi-compute/
 ├── README.md                   # 本文件
 ├── .gitignore
 ├── pyproject.toml              # Python 依赖管理 (uv)
+├── config.json                 # 运行配置（改此文件，无需重新编译）
 ├── main.py                     # Python 入口占位
 ├── src/
-│   ├── config.json             # 运行配置（改此文件，无需重新编译）
-│   ├── main.cpp                # 入口
+│   ├── main.cpp                # 入口（读 config.json 运行）
 │   ├── kmeans.cpp              # K-Means 主类 + 自动 K 推导
 │   ├── kmeans_sequential.cpp   # CPU 串行后端（验证）
 │   ├── kmeans_omp.cpp          # OpenMP 并行后端
