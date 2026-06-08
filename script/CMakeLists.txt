@@ -10,8 +10,14 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${SCRIPT_BINARY_DIR}")
 # dat_out — 数据格式转换 / 预览工具
 # ------------------------------------------------
 add_executable(dat_out dat_out.cpp)
+add_executable(testrc testrc.cpp)
 
 target_include_directories(dat_out PRIVATE
+  ${CMAKE_PROJECT_DIR}
+  ${CMAKE_PROJECT_DIR}/include
+)
+
+target_include_directories(testrc PRIVATE
   ${CMAKE_PROJECT_DIR}
   ${CMAKE_PROJECT_DIR}/include
 )

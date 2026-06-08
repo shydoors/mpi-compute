@@ -99,4 +99,5 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build")
 add_subdirectory(src)
 add_subdirectory(script)
 add_subdirectory(code-stu)
+add_subdirectory(code-tec)
 
