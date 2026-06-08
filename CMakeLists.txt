@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.16)
 project(mpi-compute
   VERSION 1.0.0
   DESCRIPTION "教学项目 — K-Means 聚类算法（CUDA + OpenMP + MPI）"
-  LANGUAGES CXX CUDA
+  LANGUAGES C CXX CUDA
 )
 
 # ============================================================
@@ -98,4 +98,5 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build")
 # ============================================================
 add_subdirectory(src)
 add_subdirectory(script)
+add_subdirectory(code-stu)
 
