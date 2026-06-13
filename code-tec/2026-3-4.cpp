@@ -1,6 +1,5 @@
-//进程间互相通信
 #include <iostream>
-#include  "mpi.h"
+#include "mpi.h"
 using namespace std;
 int main(int argc, char *argv[])
 {
@@ -36,7 +35,6 @@ int main(int argc, char *argv[])
 		}
 		MPI_Barrier(MPI_COMM_WORLD); /* 执行一下同步加入它主要是为了将前后两次数据传递分开*/
 	} while (value >= 0);
-
 	MPI_Finalize();
 	return 0;
 }

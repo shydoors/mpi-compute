@@ -1,14 +1,15 @@
-//简单的MPI程序
+/**
+ * @file 2026-3-1.cpp
+ * @brief 简单的 MPI 程序
+ */
 #include <iostream>
 #include <string>
-#include  "mpi.h"
-using namespace std;
-int main(int argc, char *argv[])
-{
+#include "mpi.h"
+int main(int argc, char *argv[]) {
 	MPI_Init(&argc, &argv);
-	string s = argv[1];
-	string s1 = argv[2];
-	cout<<s <<"Hello World!" <<"   "<<s1<< endl;
+    std::string s = argv[1];
+    std::string s1 = argv[2];
+    std::cout << s << "Hello World!   " << s1 << std::endl;
 	MPI_Finalize();
 	return 0;
 }

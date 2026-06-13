@@ -7,27 +7,22 @@ set(SCRIPT_BINARY_DIR "${CMAKE_PROJECT_DIR}/script/build")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${SCRIPT_BINARY_DIR}")
 
 # ------------------------------------------------
+# 公共 include 路径（供所有 script 目标复用）
+# ------------------------------------------------
+set(SCRIPT_INCLUDE_DIRS
+        ${CMAKE_PROJECT_DIR}
+        ${CMAKE_PROJECT_DIR}/include
+)
+
+# ------------------------------------------------
 # dat_out — 数据格式转换 / 预览工具
 # ------------------------------------------------
 add_executable(dat_out dat_out.cpp)
-add_executable(testrc testrc.cpp)
-
-target_include_directories(dat_out PRIVATE
-  ${CMAKE_PROJECT_DIR}
-  ${CMAKE_PROJECT_DIR}/include
-)
-
-target_include_directories(testrc PRIVATE
-  ${CMAKE_PROJECT_DIR}
-  ${CMAKE_PROJECT_DIR}/include
-)
-
-if(OpenMP_CXX_FOUND)
-  target_link_libraries(dat_out PRIVATE OpenMP::OpenMP_CXX)
-endif()
+target_include_directories(dat_out PRIVATE ${SCRIPT_INCLUDE_DIRS})
+target_link_libraries(dat_out PRIVATE OpenMP::OpenMP_CXX)
 
 # ============================================================
 # 未来可在此处添加更多脚本目标，例如：
-#   add_executable(check_env check_env.cpp)
+#   add_executable(testrc testrc.cpp)
+#   target_include_directories(testrc PRIVATE ${SCRIPT_INCLUDE_DIRS})
 # ============================================================
-
