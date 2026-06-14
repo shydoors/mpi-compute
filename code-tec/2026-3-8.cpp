@@ -18,11 +18,9 @@ int main(int argc, char **argv) {
   std::vector<double> global_array(ARRAY_SIZE);
   double start_time, end_time;
 
-
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
-
 
   if (size < 2) {
     if (rank == 0) {
@@ -34,15 +32,11 @@ int main(int argc, char **argv) {
 
   std::srand(static_cast<unsigned>(std::time(nullptr)) + rank * 1000);
 
-
-
-
   std::cout << "进程 " << rank << ": 初始化本地数组" << std::endl;
   for (int i = 0; i < ARRAY_SIZE; ++i) {
 
     local_array[i] = (rank + 1) * 10.0 + i * 0.1 + (std::rand() % 100) * 0.01;
   }
-
 
   if (rank == 0) {
     std::cout << "\n=== 本地数组示例（进程 0 前 5 个元素）===\n";
@@ -52,29 +46,24 @@ int main(int argc, char **argv) {
     }
   }
 
-
-    MPI_Barrier(MPI_COMM_WORLD);
-
-
-
+  MPI_Barrier(MPI_COMM_WORLD);
 
   start_time = MPI_Wtime();
 
-
-
-    MPI_Reduce(local_array.data(), global_array.data(), ARRAY_SIZE, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+  MPI_Reduce(local_array.data(), global_array.data(), ARRAY_SIZE, MPI_DOUBLE,
+             MPI_SUM, 0, MPI_COMM_WORLD);
   end_time = MPI_Wtime();
 
   if (rank == 0) {
     std::cout << "\n=== 数组求和归约结果 ===\n";
 
-
-        std::cout << "归约耗时：" << std::setprecision(6) << end_time - start_time << " 秒\n";
+    std::cout << "归约耗时：" << std::setprecision(6) << end_time - start_time
+              << " 秒\n";
     std::cout << "前 5 个元素的归约结果:\n";
     for (int i = 0; i < 5; ++i) {
 
-
-            std::cout << "global_array[" << i << "] = " << global_array[i] << std::endl;
+      std::cout << "global_array[" << i << "] = " << global_array[i]
+                << std::endl;
     }
 
     std::cout << "\n验证：每个元素应该是各进程对应元素之和\n";
@@ -83,7 +72,7 @@ int main(int argc, char **argv) {
       double expected = 0.0;
       for (int p = 0; p < size; ++p) {
 
-                expected += (p + 1) * 10.0 + i * 0.1;
+        expected += (p + 1) * 10.0 + i * 0.1;
       }
       std::cout << expected << " ";
     }
@@ -91,56 +80,48 @@ int main(int argc, char **argv) {
   }
   MPI_Barrier(MPI_COMM_WORLD);
 
-
-
-
   std::fill(global_array.begin(), global_array.end(), 0.0);
 
-
-
-    MPI_Reduce(local_array.data(), global_array.data(), ARRAY_SIZE, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+  MPI_Reduce(local_array.data(), global_array.data(), ARRAY_SIZE, MPI_DOUBLE,
+             MPI_MAX, 0, MPI_COMM_WORLD);
   if (rank == 0) {
     std::cout << "\n=== 数组最大值归约结果 ===\n";
     std::cout << "前 5 个元素的最大值:\n";
     for (int i = 0; i < 5; ++i) {
 
-
-            std::cout << "global_array[" << i << "] = " << global_array[i] << std::endl;
+      std::cout << "global_array[" << i << "] = " << global_array[i]
+                << std::endl;
     }
   }
 
   MPI_Barrier(MPI_COMM_WORLD);
 
-
-
-
   std::fill(global_array.begin(), global_array.end(), 0.0);
 
-
-
-    MPI_Reduce(local_array.data(), global_array.data(), ARRAY_SIZE, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+  MPI_Reduce(local_array.data(), global_array.data(), ARRAY_SIZE, MPI_DOUBLE,
+             MPI_MIN, 0, MPI_COMM_WORLD);
   if (rank == 0) {
     std::cout << "\n=== 数组最小值归约结果 ===\n";
     std::cout << "前 5 个元素的最小值:\n";
     for (int i = 0; i < 5; ++i) {
-            std::cout << "global_array[" << i << "] = " << global_array[i] << std::endl;
+      std::cout << "global_array[" << i << "] = " << global_array[i]
+                << std::endl;
     }
   }
 
   MPI_Barrier(MPI_COMM_WORLD);
   int partial_count = 50;
   std::vector<double> partial_result(partial_count);
-    MPI_Reduce(local_array.data(), partial_result.data(), partial_count, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+  MPI_Reduce(local_array.data(), partial_result.data(), partial_count,
+             MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
   if (rank == 0) {
     std::cout << "\n=== 部分数组归约（前 " << partial_count << " 个元素）===\n";
     std::cout << "partial_result[0] = " << partial_result[0] << std::endl;
 
-
-        std::cout << "partial_result[" << partial_count - 1 << "] = " << partial_result[partial_count - 1] << std::endl;
+    std::cout << "partial_result[" << partial_count - 1
+              << "] = " << partial_result[partial_count - 1] << std::endl;
   }
   MPI_Barrier(MPI_COMM_WORLD);
-
-
 
   MPI_Finalize();
   return 0;
