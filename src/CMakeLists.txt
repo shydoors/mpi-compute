@@ -1,19 +1,21 @@
 # ============================================================
-# src/CMakeLists.txt — 主项目源文件
+# src/CMakeLists.txt -- 主项目源文件
 # ============================================================
 
 # CUDA 源文件
 set(CUDA_SOURCES
-  kmeans_kernels.cu
+  kmeans/kernels.cu
 )
 
 # C++ 源文件
 set(CXX_SOURCES
   main.cpp
+  json_config.cpp
+  output_writer.cpp
   dataset.cpp
   kmeans.cpp
-  kmeans_sequential.cpp
-  kmeans_omp.cpp
+  kmeans/sequential.cpp
+  kmeans/omp.cpp
   checkpoint.cpp
 )
 
@@ -47,7 +49,7 @@ if(MPI_CXX_FOUND)
 endif()
 
 # ============================================================
-# CUDA 架构 — 自动检测或使用默认
+# CUDA 架构 -- 自动检测或使用默认
 # ============================================================
 if(CMAKE_CUDA_COMPILER)
   if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.23")

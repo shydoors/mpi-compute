@@ -18,7 +18,7 @@ from pathlib import Path
 # ════════════════════════════════════════════════════════════
 # 用户参数
 # ════════════════════════════════════════════════════════════
-TIMESTAMP = "20260615_030119"  # 留空则交互式选择；填时间戳直接渲染
+TIMESTAMP = "20260617_013451"  # 留空则交互式选择；填时间戳直接渲染
 OUTPUT    = f"results/{TIMESTAMP}/clusters_{TIMESTAMP}.svg" if TIMESTAMP else None
 
 
