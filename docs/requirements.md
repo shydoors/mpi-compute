@@ -1,12 +1,10 @@
 # 语义准确
 
 1. 使用 `cstdint` 库来声明整数类型
-
 * `std::int32_t` ==> `int`
 * `std::uint32_t` ==> `unsigned int`
 * `std::int64_t` ==> `long long`
 * `std::uint64_t` ==> `unsigned long long`
-
 2. 类的初始化使用大括号（统一列表初始化）。
 3. 不得省略括号、大括号。尤其 for 循环、if 语句判断的时候。
 4. 优先使用 `char*` 作为文件路径，其次使用 `std::filesystem::path`，再其次 `std::string`。
@@ -18,20 +16,20 @@
 
 # 版本
 
-| KEY | VALUE |
-|:----|:------|
-| C++ 标准 | C++17 |
-| OpenMP | >= 4.5 |
-| CMake | >= 3.16 |
+| KEY               | VALUE                     |
+|:------------------|:--------------------------|
+| C++ 标准            | C++17                     |
+| OpenMP            | >= 4.5                    |
+| CMake             | >= 3.16                   |
 | nvcc 主机侧（gcc/g++） | gcc (GCC) 16.1.1 20260430 |
-| nvcc 主机侧（msvc） | VS2019 |
+| nvcc 主机侧（msvc）    | VS2019                    |
 
 # 编译器参数
 
-| KEY | VALUE |
-|:----|:------|
-| DEBUG | `-g -O0 -std=c++17 -Wall -Wextra -fopenmp` |
-| RELEASE | `-O2 -std=c++17 -Wall -Wextra -fopenmp` |
+| KEY     | VALUE                                      |
+|:--------|:-------------------------------------------|
+| DEBUG   | `-g -O0 -std=c++17 -Wall -Wextra -fopenmp` |
+| RELEASE | `-O2 -std=c++17 -Wall -Wextra -fopenmp`    |
 
 # 项目结构
 
@@ -39,7 +37,9 @@
 * `include/` — 头文件
 * `build/` — 构建产物（不提交到 git）
 * `code-stu/` — 学习代码、课本示例（自动扫描编译）
+* `code-tec/` — 学习代码、老师提供（自动扫描编译）
 * `data/` — 输入数据
 * `results/` — 输出文件，以时间戳为文件夹（不提交到 git）
 * `docs/` — 文档
+* `docs/books` — 转为md的pdf课件
 * `script/` — 脚本，包括但不限于预处理文件

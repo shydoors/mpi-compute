@@ -1,19 +1,19 @@
 #include <cstdio>
 /**
  * @file main.cpp
- * @brief K-Means 聚类 — 主入口（读 config.json，VS2019 直接运行版）
+ * @brief K-Means 聚类 — 主入口（读 config.json，基于 JsonConfig 解析）
  *
  * 使用方法:
- *   1. 修改 src/config.json 中的运行参数
+ *   1. 修改 config.json 中的运行参数
  *   2. 编译运行：./build/kmeans（或 VS2019 按 F5）
- *    改 config.json 无需重新编译。
+ *     改 config.json 无需重新编译。
  *
  * 路径解析规则:
  *   程序启动时自动检测项目根目录（从 CWD 向上查找含 data/ 和 src/ 的目录）。
  *   config.json 中的所有相对路径字段（data_path, checkpoint_path 等）
  *   都会基于 ProjectsDir 拼接为绝对路径后再传给 K-Means 核心。
  *
- *   ProjectsDir 也可以在 config.json 中手动指定（绝对路径），
+ *   ProjectsDir 也可以在 config.json 中手动指定(绝对路径/相对路径均可)，
  *   此时跳过自动检测。
  *
  * 输出目录（results/ 下以 UTC+8 时间分文件夹）:
@@ -24,6 +24,7 @@
  *     └── render.csv         — 渲染用采样点
  */
 
+#include "json_config.hpp"
 #include "kmeans.hpp"
 #include "types.hpp"
 #include <algorithm>
@@ -41,115 +42,15 @@
 #include <unistd.h>
 
 // ============================================================
-// 极简 JSON 解析
-// ============================================================
-namespace {
-
-static std::string load_file(const std::string& path) {
-  std::ifstream ifs(path);
-  if (!ifs) {return "";}
-{  return std::string((std::istreambuf_iterator<char>(ifs)),
-                      std::istreambuf_iterator<char>());}
-}
-
-static std::string trim(const std::string& s) {
-  size_t a = 0, b = s.size();
-  while (a < b && (s[a] == ' ' || s[a] == '\t' || s[a] == '\n' || s[a] == '\r')) {++a;}
-  while (b > a && (s[b-1] == ' ' || s[b-1] == '\t' || s[b-1] == '\n' || s[b-1] == '\r')){ --b;}
-  return s.substr(a, b - a);
-}
-
-static std::string unquote(const std::string& s) {
-  auto t = trim(s);
-  if (t.size() >= 2 && t.front() == '"' && t.back() == '"')
-{    return t.substr(1, t.size() - 2);
-}  return t;
-}
-
-static std::string find_value_raw(const std::string& content, const std::string& key) {
-  std::string pattern = '"' + key + '"';
-  size_t pos = content.find(pattern);
-  if (pos == std::string::npos) {return "";}
-
-  pos = content.find(':', pos + pattern.size());
-  if (pos == std::string::npos) {return "";}
-
-  ++pos;
-  while (pos < content.size() && (content[pos] == ' ' || content[pos] == '\t' ||
-         content[pos] == '\n' || content[pos] == '\r')) {++pos;}
-  if (pos >= content.size()) {return "";}
-
-  if (content[pos] == '"') {
-    size_t end = pos + 1;
-    while (end < content.size()) {
-      if (content[end] == '"' && (end == pos + 1 || content[end-1] != '\\')) {break;}
-      ++end;
-    }
-    if (end < content.size()) {++end;}
-    return content.substr(pos, end - pos);
-  } else if (content[pos] == '{' || content[pos] == '[') {
-    char open = content[pos];
-    char close = (open == '{') ? '}' : ']';
-    int depth = 1;
-    size_t end = pos + 1;
-    while (end < content.size() && depth > 0) {
-      if (content[end] == open){ ++depth;}
-      else if (content[end] == close) {--depth;}
-      ++end;
-    }
-    return content.substr(pos, end - pos);
-  } else {
-    size_t end = pos;
-    while (end < content.size() && content[end] != ',' && content[end] != '}' &&
-           content[end] != ']' && content[end] != ' ' && content[end] != '\t' &&
-           content[end] != '\n' && content[end] != '\r') ++end;
-    return content.substr(pos, end - pos);
-  }
-}
-
-static std::string read_string(const std::string& content, const std::string& key) {
-  return unquote(find_value_raw(content, key));
-}
-
-static std::string read_nested_string(const std::string& content,
-                                      const std::string& obj_key,
-                                      const std::string& field_key) {
-  std::string obj = find_value_raw(content, obj_key);
-  if (obj.empty()) {return "";}
-  return unquote(find_value_raw(obj, field_key));
-}
-
-static int read_int(const std::string& content, const std::string& key) {
-  auto s = trim(find_value_raw(content, key));
-  if (s.empty()){ return 0;}
-  return std::stoi(s);
-}
-
-static double read_double(const std::string& content, const std::string& key) {
-  auto s = trim(find_value_raw(content, key));
-  if (s.empty()) {return 0.0;}
-  return std::stod(s);
-}
-
-static bool read_bool(const std::string& content, const std::string& key) {
-  auto s = trim(find_value_raw(content, key));
-  if (s == "true") {return true;}
-  if (s == "false"){ return false;}
-  return std::stoi(s) != 0;
-}
-
-} // anonymous namespace
-
-// ============================================================
 // 路径工具
 // ============================================================
 namespace {
 
 static bool is_absolute_path(const std::string& path) {
-  if (path.empty()){ return false;}
-  if (path[0] == '/'){ return true;}
+  if (path.empty()) return false;
+  if (path[0] == '/') return true;
 #ifdef _WIN32
-  if (path.size() >= 2 && std::isalpha(path[0]) && path[1] == ':') {return true;}
+  if (path.size() >= 2 && std::isalpha(path[0]) && path[1] == ':') return true;
 #endif
   return false;
 }
@@ -157,30 +58,30 @@ static bool is_absolute_path(const std::string& path) {
 static std::string join_path(const std::string& base, const std::string& rel) {
   if (rel.empty()) {return base;}
   if (is_absolute_path(rel)){ return rel;}
-  if (base.empty()){ return rel;}
+  if (base.empty()) {return rel;}
   std::string result = base;
-  if (result.back() != '/') {result += '/';}
+  if (result.back() != '/'){ result += '/';}
   result += rel;
   return result;
 }
 
 static std::string resolve_path(const std::string& path, const std::string& base) {
-  if (path.empty()){ return path;}
+  if (path.empty()) {return path;}
   if (is_absolute_path(path)) {return path;}
   return join_path(base, path);
 }
 
 static std::string detect_project_dir() {
   char buf[PATH_MAX];
-  if (!::getcwd(buf, sizeof(buf))) {return "";}
+  if (!::getcwd(buf, sizeof(buf))) return "";
   std::string dir(buf);
   while (true) {
     bool has_data = (access((dir + "/data").c_str(), F_OK) == 0);
     bool has_src  = (access((dir + "/src").c_str(),  F_OK) == 0);
     if (has_data && has_src) return dir;
-    if (dir == "/" || dir.empty()) {return "";}
+    if (dir == "/" || dir.empty()) return "";
     auto pos = dir.rfind('/');
-    if (pos == std::string::npos) {return "";}
+    if (pos == std::string::npos) return "";
     dir = (pos == 0) ? "/" : dir.substr(0, pos);
   }
 }
@@ -210,6 +111,65 @@ static std::string get_timestamp_utc8() {
 }
 
 } // anonymous namespace
+
+static KMeansConfig build_config(const JsonConfig& cfg,
+                                  const std::string& projects_dir) {
+  KMeansConfig config;
+  config.projects_dir = projects_dir;
+
+  // ---- data_path ----
+  {
+    std::string raw = cfg.get_string("data_path.value");
+    if (raw.empty()) raw = cfg.get_string("data_path");
+    if (raw.empty()) raw = "data/a.dat";
+    config.data_path = resolve_path(raw, projects_dir);
+  }
+
+  // ---- backend ----
+  {
+    std::string bs = cfg.get_string("backend.value");
+    if (bs.empty()) bs = cfg.get_string("backend");
+    if (bs == "seq")       config.backend = Backend::Sequential;
+    else if (bs == "omp")  config.backend = Backend::OpenMP;
+    else if (bs == "cuda") config.backend = Backend::CUDA;
+    else {
+      std::fprintf(stderr, "Warning: 未知后端 '%s'，使用默认 cuda\n",
+                   bs.c_str());
+      config.backend = Backend::CUDA;
+    }
+  }
+
+  // ---- K 值 ----
+  {
+    int k = cfg.get_int("k.value", 0);
+    if (k <= 0) {
+      config.auto_k  = true;
+      config.fixed_k = 0;
+    } else {
+      config.auto_k  = false;
+      config.fixed_k = static_cast<u32>(k);
+    }
+  }
+
+  // ---- 迭代参数 ----
+  config.max_iterations = cfg.get_int("max_iterations", kMaxIterations);
+  config.threshold      = cfg.get_double("threshold", kConvergenceThreshold);
+
+  // ---- 流式 ----
+  config.streaming = cfg.get_bool("streaming", false);
+
+  // ---- 断点 ----
+  {
+    std::string cp = cfg.get_string("checkpoint_path");
+    config.checkpoint_path = resolve_path(cp, projects_dir);
+  }
+  config.resume = cfg.get_bool("resume", false);
+
+  // ---- 输出 ----
+  config.output_path = "";
+
+  return config;
+}
 
 // ============================================================
 // 输出文件 — 直接以固定文件名写入指定目录
@@ -356,24 +316,25 @@ static void kmeans_run() {
   std::string projects_dir = detect_project_dir();
 
   // ---- 2. 定位并读取 config.json ----
-  std::string config_content;
+  JsonConfig cfg;
+  bool loaded = false;
   if (!projects_dir.empty()) {
-    config_content = load_file(projects_dir + "/config.json");
+    loaded = cfg.load(projects_dir + "/config.json");
   }
-  if (config_content.empty()) {
-    config_content = load_file("config.json");
+  if (!loaded) {
+    loaded = cfg.load("config.json");
   }
-  if (config_content.empty()) {
+  if (!loaded) {
     std::fprintf(stderr, "Error: 找不到 config.json\n"
                          "请确保在项目根目录下运行。\n"
-                         "或在 config.json 中设置 ProjectsDir 为项目根目录的绝对路径。\n");
+                         "或在 config.json 中设置 projects_dir 为项目根目录的绝对路径。\n");
     std::getchar();
     return;
   }
 
   // ---- 3. 从 config.json 中读 ProjectsDir（如果有，覆盖自动检测的结果） ----
   {
-    std::string cfg_dir = read_string(config_content, "ProjectsDir");
+    std::string cfg_dir = cfg.get_string("ProjectsDir");
     if (!cfg_dir.empty()) {
       if (!is_absolute_path(cfg_dir)) {
         char buf[PATH_MAX];
@@ -395,42 +356,11 @@ static void kmeans_run() {
   std::printf("  项目根目录:  %s\n", projects_dir.c_str());
 
   // ---- 4. 构建配置 ----
-  KMeansConfig config;
-  config.projects_dir = projects_dir;
+  KMeansConfig config = build_config(cfg, projects_dir);
 
-  std::string raw_data_path = read_string(config_content, "data_path");
-  if (raw_data_path.empty()) raw_data_path = "data/a.dat";
-  config.data_path = resolve_path(raw_data_path, projects_dir);
-
-  std::string backend_str = read_nested_string(config_content, "backend", "value");
-  if (backend_str.empty()) backend_str = read_string(config_content, "backend");
-  if (backend_str == "seq")       config.backend = Backend::Sequential;
-  else if (backend_str == "omp")  config.backend = Backend::OpenMP;
-  else if (backend_str == "cuda") config.backend = Backend::CUDA;
-  else {
-    std::fprintf(stderr, "Warning: 未知后端 '%s'，使用默认 omp\n",
-                 backend_str.c_str());
-    config.backend = Backend::OpenMP;
-  }
-
-  config.auto_k         = read_bool(config_content, "auto_k");
-  config.fixed_k        = static_cast<u32>(read_int(config_content, "fixed_k"));
-  config.max_iterations = read_int(config_content, "max_iterations");
-  config.threshold      = read_double(config_content, "threshold");
-  config.streaming      = read_bool(config_content, "streaming");
-  config.checkpoint_path = resolve_path(
-      read_string(config_content, "checkpoint_path"), projects_dir);
-  config.resume   = read_bool(config_content, "resume");
-  config.output_path = "";
-
-  u64 render_max_points = 100000;
-  {
-    auto obj = find_value_raw(config_content, "output");
-    if (!obj.empty()) {
-      auto v = read_int(obj, "render_max_points");
-      if (v > 0) render_max_points = static_cast<u64>(v);
-    }
-  }
+  // 渲染采样上限
+  u64 render_max_points =
+    static_cast<u64>(cfg.get_int("output.render_max_points", 100000));
 
   // ---- 5. 打印配置 ----
   std::printf("========================================\n");
