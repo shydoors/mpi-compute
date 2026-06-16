@@ -1,6 +1,6 @@
+#include "checkpoint.hpp"
 #include "kmeans.hpp"
 #include "types.hpp"
-#include "checkpoint.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -8,21 +8,18 @@
 #include <memory>
 
 /// 访问 xs[i] / ys[i]（兼容 SoA 和交错模式）
-static inline f64 get_x(const f64* xs, const f64* ys, u64 i, bool interleaved) {
+static inline f64 get_x(const f64 *xs, const f64 *ys, u64 i, bool interleaved) {
   (void)ys;
   return interleaved ? xs[i * 2] : xs[i];
 }
-static inline f64 get_y(const f64* xs, const f64* ys, u64 i, bool interleaved) {
+static inline f64 get_y(const f64 *xs, const f64 *ys, u64 i, bool interleaved) {
   return interleaved ? xs[i * 2 + 1] : ys[i];
 }
 
-KMeansResult run_kmeans_sequential(
-    const f64* xs, const f64* ys, u64 n, u32 k,
-    i32 max_iter, f64 threshold,
-    f64* init_cx, f64* init_cy,
-    bool interleaved,
-    u32* labels_out)
-{
+KMeansResult run_kmeans_sequential(const f64 *xs, const f64 *ys, u64 n, u32 k,
+                                   i32 max_iter, f64 threshold, f64 *init_cx,
+                                   f64 *init_cy, bool interleaved,
+                                   u32 *labels_out) {
   KMeansResult result;
   result.k = k;
 
@@ -36,7 +33,7 @@ KMeansResult run_kmeans_sequential(
   for (i32 iter = 0; iter < max_iter; ++iter) {
     auto sumx = std::make_unique<f64[]>(k);
     auto sumy = std::make_unique<f64[]>(k);
-    auto cnt  = std::make_unique<u64[]>(k);
+    auto cnt = std::make_unique<u64[]>(k);
 
     for (u64 i = 0; i < n; ++i) {
       f64 px = get_x(xs, ys, i, interleaved);
@@ -48,7 +45,10 @@ KMeansResult run_kmeans_sequential(
         f64 dx = px - cx[j];
         f64 dy = py - cy[j];
         f64 d = dx * dx + dy * dy;
-        if (d < best_dist) { best_dist = d; best_c = j; }
+        if (d < best_dist) {
+          best_dist = d;
+          best_c = j;
+        }
       }
 
       labels_out[i] = best_c;
@@ -62,8 +62,8 @@ KMeansResult run_kmeans_sequential(
       if (cnt[j] > 0) {
         f64 new_cx = sumx[j] / static_cast<f64>(cnt[j]);
         f64 new_cy = sumy[j] / static_cast<f64>(cnt[j]);
-        delta += (new_cx - cx[j]) * (new_cx - cx[j])
-               + (new_cy - cy[j]) * (new_cy - cy[j]);
+        delta += (new_cx - cx[j]) * (new_cx - cx[j]) +
+                 (new_cy - cy[j]) * (new_cy - cy[j]);
         cx[j] = new_cx;
         cy[j] = new_cy;
       }
@@ -79,7 +79,8 @@ KMeansResult run_kmeans_sequential(
     }
   }
 
-  if (result.iterations == 0) result.iterations = max_iter;
+  if (result.iterations == 0)
+    result.iterations = max_iter;
 
   f64 inertia = 0.0;
   for (u64 i = 0; i < n; ++i) {

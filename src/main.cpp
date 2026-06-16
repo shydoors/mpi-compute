@@ -47,45 +47,45 @@ namespace {
 
 static std::string load_file(const std::string& path) {
   std::ifstream ifs(path);
-  if (!ifs) return "";
-  return std::string((std::istreambuf_iterator<char>(ifs)),
-                      std::istreambuf_iterator<char>());
+  if (!ifs) {return "";}
+{  return std::string((std::istreambuf_iterator<char>(ifs)),
+                      std::istreambuf_iterator<char>());}
 }
 
 static std::string trim(const std::string& s) {
   size_t a = 0, b = s.size();
-  while (a < b && (s[a] == ' ' || s[a] == '\t' || s[a] == '\n' || s[a] == '\r')) ++a;
-  while (b > a && (s[b-1] == ' ' || s[b-1] == '\t' || s[b-1] == '\n' || s[b-1] == '\r')) --b;
+  while (a < b && (s[a] == ' ' || s[a] == '\t' || s[a] == '\n' || s[a] == '\r')) {++a;}
+  while (b > a && (s[b-1] == ' ' || s[b-1] == '\t' || s[b-1] == '\n' || s[b-1] == '\r')){ --b;}
   return s.substr(a, b - a);
 }
 
 static std::string unquote(const std::string& s) {
   auto t = trim(s);
   if (t.size() >= 2 && t.front() == '"' && t.back() == '"')
-    return t.substr(1, t.size() - 2);
-  return t;
+{    return t.substr(1, t.size() - 2);
+}  return t;
 }
 
 static std::string find_value_raw(const std::string& content, const std::string& key) {
   std::string pattern = '"' + key + '"';
   size_t pos = content.find(pattern);
-  if (pos == std::string::npos) return "";
+  if (pos == std::string::npos) {return "";}
 
   pos = content.find(':', pos + pattern.size());
-  if (pos == std::string::npos) return "";
+  if (pos == std::string::npos) {return "";}
 
   ++pos;
   while (pos < content.size() && (content[pos] == ' ' || content[pos] == '\t' ||
-         content[pos] == '\n' || content[pos] == '\r')) ++pos;
-  if (pos >= content.size()) return "";
+         content[pos] == '\n' || content[pos] == '\r')) {++pos;}
+  if (pos >= content.size()) {return "";}
 
   if (content[pos] == '"') {
     size_t end = pos + 1;
     while (end < content.size()) {
-      if (content[end] == '"' && (end == pos + 1 || content[end-1] != '\\')) break;
+      if (content[end] == '"' && (end == pos + 1 || content[end-1] != '\\')) {break;}
       ++end;
     }
-    if (end < content.size()) ++end;
+    if (end < content.size()) {++end;}
     return content.substr(pos, end - pos);
   } else if (content[pos] == '{' || content[pos] == '[') {
     char open = content[pos];
@@ -93,8 +93,8 @@ static std::string find_value_raw(const std::string& content, const std::string&
     int depth = 1;
     size_t end = pos + 1;
     while (end < content.size() && depth > 0) {
-      if (content[end] == open) ++depth;
-      else if (content[end] == close) --depth;
+      if (content[end] == open){ ++depth;}
+      else if (content[end] == close) {--depth;}
       ++end;
     }
     return content.substr(pos, end - pos);
@@ -115,26 +115,26 @@ static std::string read_nested_string(const std::string& content,
                                       const std::string& obj_key,
                                       const std::string& field_key) {
   std::string obj = find_value_raw(content, obj_key);
-  if (obj.empty()) return "";
+  if (obj.empty()) {return "";}
   return unquote(find_value_raw(obj, field_key));
 }
 
 static int read_int(const std::string& content, const std::string& key) {
   auto s = trim(find_value_raw(content, key));
-  if (s.empty()) return 0;
+  if (s.empty()){ return 0;}
   return std::stoi(s);
 }
 
 static double read_double(const std::string& content, const std::string& key) {
   auto s = trim(find_value_raw(content, key));
-  if (s.empty()) return 0.0;
+  if (s.empty()) {return 0.0;}
   return std::stod(s);
 }
 
 static bool read_bool(const std::string& content, const std::string& key) {
   auto s = trim(find_value_raw(content, key));
-  if (s == "true") return true;
-  if (s == "false") return false;
+  if (s == "true") {return true;}
+  if (s == "false"){ return false;}
   return std::stoi(s) != 0;
 }
 
@@ -146,41 +146,41 @@ static bool read_bool(const std::string& content, const std::string& key) {
 namespace {
 
 static bool is_absolute_path(const std::string& path) {
-  if (path.empty()) return false;
-  if (path[0] == '/') return true;
+  if (path.empty()){ return false;}
+  if (path[0] == '/'){ return true;}
 #ifdef _WIN32
-  if (path.size() >= 2 && std::isalpha(path[0]) && path[1] == ':') return true;
+  if (path.size() >= 2 && std::isalpha(path[0]) && path[1] == ':') {return true;}
 #endif
   return false;
 }
 
 static std::string join_path(const std::string& base, const std::string& rel) {
-  if (rel.empty()) return base;
-  if (is_absolute_path(rel)) return rel;
-  if (base.empty()) return rel;
+  if (rel.empty()) {return base;}
+  if (is_absolute_path(rel)){ return rel;}
+  if (base.empty()){ return rel;}
   std::string result = base;
-  if (result.back() != '/') result += '/';
+  if (result.back() != '/') {result += '/';}
   result += rel;
   return result;
 }
 
 static std::string resolve_path(const std::string& path, const std::string& base) {
-  if (path.empty()) return path;
-  if (is_absolute_path(path)) return path;
+  if (path.empty()){ return path;}
+  if (is_absolute_path(path)) {return path;}
   return join_path(base, path);
 }
 
 static std::string detect_project_dir() {
   char buf[PATH_MAX];
-  if (!::getcwd(buf, sizeof(buf))) return "";
+  if (!::getcwd(buf, sizeof(buf))) {return "";}
   std::string dir(buf);
   while (true) {
     bool has_data = (access((dir + "/data").c_str(), F_OK) == 0);
     bool has_src  = (access((dir + "/src").c_str(),  F_OK) == 0);
     if (has_data && has_src) return dir;
-    if (dir == "/" || dir.empty()) return "";
+    if (dir == "/" || dir.empty()) {return "";}
     auto pos = dir.rfind('/');
-    if (pos == std::string::npos) return "";
+    if (pos == std::string::npos) {return "";}
     dir = (pos == 0) ? "/" : dir.substr(0, pos);
   }
 }

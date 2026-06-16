@@ -1,6 +1,9 @@
 {
     "_description": "K-Means 运行配置 — 修改此文件后直接运行程序即可，无需重新编译",
-    "data_path": "data/b.dat",
+    "data_path": {
+        "value": "data/c.dat",
+        "description":"导入数据"
+    },
     "backend": {
         "value": "cuda",
         "description": "seq (串行) / omp (OpenMP多核) / cuda (GPU加速)"

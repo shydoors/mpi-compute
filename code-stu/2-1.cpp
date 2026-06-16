@@ -1,13 +1,10 @@
 #include <iostream>
 #include <omp.h>
-
 int main() {
   std::cout << " Program 2-1 " << std::endl;
-
 #pragma omp parallel num_threads(4)
   {
     printf("thread %d is running \n", omp_get_thread_num());
-
 // #pragma omp master
 #pragma omp masked filter(0)
     {
@@ -15,11 +12,9 @@ int main() {
       printf(">>>>>>>>>>>>>>>>[master] thread %d in line %d \n",
              omp_get_thread_num(), __LINE__);
     }
-
 #pragma omp single
     {
-      printf("[single] thread %d in line %d \n", omp_get_thread_num(),
-             __LINE__);
+      printf("[single] thread %d in line %d \n", omp_get_thread_num(),__LINE__);
     }
   }
   return 0;

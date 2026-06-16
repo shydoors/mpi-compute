@@ -12,7 +12,6 @@ int main() {
 #endif
   printf(" 并行区外调用 omp_get_num_threads() 返回: %d\n",
          omp_get_num_threads());
-
 #pragma omp parallel num_threads(4)
   {
     int tid = omp_get_thread_num(); // 当前线程编号 (0~3)

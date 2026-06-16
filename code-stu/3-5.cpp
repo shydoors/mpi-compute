@@ -7,13 +7,13 @@ int main(void) {
   MPI_Init(NULL, NULL);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
-  printf("process is rank %d, size is %d\n", rank, size);
+  printf("process is rank "PRId32", size is "PRId32"\n", rank, size);
   if (0 == rank) {
     data_tmp = 666;
-    printf("Send data  %d\n", data_tmp);
+    printf("Send data  "PRId32"\n", data_tmp);
     MPI_Send(&data_tmp, 1, MPI_INT, 3, 1, MPI_COMM_WORLD);
     data_tmp = 777;
-    printf("Send data  %d\n", data_tmp);
+    printf("Send data  "PRId32"\n", data_tmp);
     MPI_Send(&data_tmp, 1, MPI_INT, 3, 2, MPI_COMM_WORLD);
 
     /**
@@ -34,7 +34,7 @@ int main(void) {
     // printf("hello world from rank %d\n", rank);
     int32_t data = 0;
     MPI_Recv(&data, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, &stat);
-    printf("Rank %d got msg data %d\n", rank, data);
+    printf("Rank "PRId32" got msg data "PRId32"\n", rank, data);
   }
   MPI_Finalize();
   return 0;

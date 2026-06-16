@@ -9,7 +9,6 @@ int main() {
   for (int i = 0; i < max_num; ++i) {
 #pragma omp atomic
     sum += i;
-
     // atomic需要保证在当前线程完成操作之前，其它线程不允许操作
     // 和critical的区别是，atomic只能保证单个变量的原子操作，而critical可以保护一段代码块，允许多个变量的原子操作。
   }

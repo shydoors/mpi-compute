@@ -2,7 +2,8 @@
 #include <mpi.h>
 #include <stdint.h>
 #include <stdio.h>
-/**规约
+/**
+ * 规约
  * 将消息集中起来处理，与广播刚好相反
  * MPI_Reduce
  */

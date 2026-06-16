@@ -18,8 +18,8 @@ from pathlib import Path
 # ════════════════════════════════════════════════════════════
 # 用户参数
 # ════════════════════════════════════════════════════════════
-TIMESTAMP = "20260607_135044"  # 留空则交互式选择；填时间戳直接渲染
-OUTPUT    = f"results/{TIMESTAMP}/clusters_{TIMESTAMP}.png" if TIMESTAMP else None
+TIMESTAMP = "20260615_030119"  # 留空则交互式选择；填时间戳直接渲染
+OUTPUT    = f"results/{TIMESTAMP}/clusters_{TIMESTAMP}.svg" if TIMESTAMP else None
 
 
 # ════════════════════════════════════════════════════════════
@@ -178,13 +178,11 @@ def render(run_dir: str, output_path: str = None):
     ax.set_ylabel("Y")
     ax.set_aspect("equal")
     ax.grid(True, alpha=0.3)
-
     plt.tight_layout()
-
     if output_path is None:
-        output_path = f"clusters_{timestamp}.png"
+        output_path = f"clusters_{timestamp}.svg"
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    plt.savefig(output_path, dpi=1500)
     plt.close(fig)
 
     print(f"  Saved:         {output_path}")

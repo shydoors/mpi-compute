@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-int main(int32_t argc, char *argv[]) {
+int main(int argc, char *argv[]) {
   int32_t num_t = strtol(argv[1], NULL, 20);
   printf("proc cnt %" PRId32 ", \n", omp_get_num_procs());
   printf("proc cnt %" PRId32 ", \n", omp_get_num_threads());

@@ -119,8 +119,8 @@ bool checkpoint_load(const std::string& path,
 // ============================================================
 bool checkpoint_valid(const std::string& path) {
   std::FILE* fp = std::fopen(path.c_str(), "rb");
-  if (!fp) return false;
-
+  if (!fp) {return false;
+}
   CheckpointHeader header;
   if (std::fread(&header, sizeof(header), 1, fp) != 1) {
     std::fclose(fp);

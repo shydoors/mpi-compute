@@ -5,10 +5,8 @@
 int main(int argc, char *argv[]) {
   int max_num = strtol(argv[1], NULL, 10);
   int num_t = strtol(argv[2], NULL, 10);
-
   int sum = 0;
   int item = max_num / num_t;
-
 #pragma omp parallel num_threads(num_t)
   {
     int id = omp_get_thread_num();
@@ -25,6 +23,5 @@ int main(int argc, char *argv[]) {
     }
   }
   printf("sum %d\n", sum);
-
   return 0;
 }

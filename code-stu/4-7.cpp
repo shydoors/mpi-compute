@@ -15,7 +15,6 @@ int main(int argc, char *argv[]) {
   std::vector<int64_t> recv_buf(size * N);
   MPI_Allgather(send_buf.data(), N, MPI_INT64_T, recv_buf.data(), N,
                 MPI_INT64_T, MPI_COMM_WORLD);
-
   if (0 == rank) {
     std::cout << "=== Gathered data ===" << std::endl;
     for (auto v : recv_buf) {

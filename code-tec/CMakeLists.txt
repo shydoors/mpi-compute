@@ -54,7 +54,6 @@ foreach(SRC ${SRC_FILES})
             target_link_libraries(${EXE_NAME} PRIVATE MPI::MPI_CXX)
         endif()
     endif()
-
     set_target_properties(${EXE_NAME} PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY "${SCRIPT_BINARY_DIR}")
 endforeach()

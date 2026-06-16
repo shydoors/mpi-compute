@@ -1,6 +1,13 @@
 # Defines the Chromium style for automatic reformatting.
 # http://clang.llvm.org/docs/ClangFormatStyleOptions.html
+# .clang-format
+AllowShortBlocksOnASingleLine: false
+# 禁止将代码块压缩到一行
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+
 BasedOnStyle: Chromium
+BreakBeforeBraces: Attach
 # This defaults to 'Auto'. Explicitly set it for a while, so that
 # 'vector<vector<int> >' in existing files gets formatted to
 # 'vector<vector<int>>'. ('Auto' means that clang-format will only use

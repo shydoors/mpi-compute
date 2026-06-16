@@ -15,13 +15,13 @@ int main(void) {
   if (0 == rank) {
     data_send = 777;
     MPI_Send(&data_send, 1, MPI_INT, 1, 1, MPI_COMM_WORLD);
-    printf("rank %d sent data : %d \n", rank, data_send);
+    printf("rank "PRId32" sent data : "PRId32" \n", rank, data_send);
     data_send = 888;
     MPI_Send(&data_send, 1, MPI_INT, 1, 2, MPI_COMM_WORLD);
-    printf("rank %d sent data : %d \n", rank, data_send);
+    printf("rank "PRId32" sent data : "PRId32" \n", rank, data_send);
   } else if (1 == rank) {
     MPI_Recv(&data_recv, 1, MPI_INT, 0, 3, MPI_COMM_WORLD, &stat);
-    printf("rank %d got data : %d \n", rank, data_recv);
+    printf("rank "PRId32" got data : "PRId32" \n", rank, data_recv);
   }
   MPI_Finalize();
   return 0;
